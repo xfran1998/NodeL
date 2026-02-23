@@ -1,0 +1,594 @@
+/* ── Reset & Dark Theme ── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  background: #111827;
+  color: #e5e7eb;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ── React Flow overrides ── */
+.react-flow__background {
+  background: #111827 !important;
+}
+
+/* Remove dark-mode wrapper styling so only .blueprint-node is visible */
+.react-flow__node {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  min-width: 220px;
+}
+
+/* Compact node wrappers need smaller min-width */
+.react-flow__node:has(.blueprint-node--compact) {
+  min-width: 140px;
+}
+
+.react-flow__minimap {
+  background: #1f2937 !important;
+  border: 1px solid #374151;
+  border-radius: 6px;
+}
+
+.react-flow__controls {
+  border: 1px solid #374151;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background: #1f2937 !important;
+  border-bottom-color: #374151 !important;
+  fill: #9ca3af !important;
+}
+
+.react-flow__controls-button:hover {
+  background: #374151 !important;
+  fill: #e5e7eb !important;
+}
+
+/* ── Blueprint Node ── */
+.blueprint-node {
+  min-width: 220px;
+  background: #1e293b;
+  border: 1.5px solid #334155;
+  border-radius: 6px;
+  font-size: 13px;
+  position: relative;
+  overflow: visible;
+}
+
+.blueprint-node.selected {
+  border-color: #60a5fa;
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.3);
+}
+
+.blueprint-node__header {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 4px 4px 0 0;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.blueprint-node__header-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.blueprint-node__pins {
+  padding-top: 4px; /* aligns row centers with handle centers: PIN_GAP - PIN_SPACING/2 = 24-20 = 4 */
+}
+
+/* ── Pin Row ── */
+.blueprint-pin-row {
+  pointer-events: none;
+}
+
+.pin-label {
+  font-size: 12px;
+  color: #d1d5db;
+  white-space: nowrap;
+}
+
+.pin-label--exec {
+  color: #f3f4f6;
+  font-weight: 500;
+}
+
+/* ── Handle Base — override React Flow defaults ── */
+.react-flow__handle {
+  border: none !important;
+  background: transparent !important;
+}
+
+/* ── Exec Handle (right-pointing triangle) ── */
+.handle-exec {
+  width: 14px !important;
+  height: 14px !important;
+  background: #fff !important;
+  clip-path: polygon(0% 0%, 100% 50%, 0% 100%) !important;
+  border-radius: 0 !important;
+}
+
+/* ── Data Handle (colored circle) ── */
+.handle-data {
+  width: 12px !important;
+  height: 12px !important;
+  border-radius: 50% !important;
+  border: 2px solid currentColor !important;
+  background: #1e293b !important;
+}
+
+.handle-data.connected {
+  background: currentColor !important;
+}
+
+/* ── Edge Styles ── */
+.exec-edge-path {
+  stroke: #fff;
+  stroke-width: 2.5;
+  fill: none;
+}
+
+.data-edge-path {
+  stroke-width: 2;
+  fill: none;
+  stroke-dasharray: 6 3;
+}
+
+/* ── Edge interaction — hover highlight & Alt+click disconnect ── */
+.react-flow__edge {
+  cursor: pointer;
+}
+
+.react-flow__edge:hover .exec-edge-path {
+  stroke: #93c5fd;
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 4px rgba(147, 197, 253, 0.5));
+}
+
+.react-flow__edge:hover .data-edge-path {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
+/* Reconnect handle (visible when hovering near edge endpoints) */
+.react-flow__edgeupdater {
+  cursor: grab;
+}
+
+/* ── Animated exec particle ── */
+@keyframes exec-flow {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+.exec-edge-animated {
+  stroke-dasharray: 4 4;
+  animation: exec-flow 0.6s linear infinite;
+}
+
+/* ── Node body children (form fields) ── */
+.blueprint-node__children {
+  padding: 4px 12px 8px;
+}
+
+.blueprint-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.blueprint-field label {
+  font-size: 11px;
+  color: #9ca3af;
+  min-width: 50px;
+}
+
+.blueprint-field input,
+.blueprint-field select {
+  flex: 1;
+  min-width: 0;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  color: #e5e7eb;
+  font-size: 12px;
+  padding: 2px 6px;
+  height: 22px;
+  outline: none;
+}
+
+.blueprint-field input:focus,
+.blueprint-field select:focus {
+  border-color: #60a5fa;
+}
+
+/* ── Compact nodes (math/compare/special — no exec pins) ── */
+.blueprint-node--compact {
+  min-width: 140px;
+}
+
+.blueprint-node--compact .blueprint-node__header {
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ── Inline field on unconnected data-in pins ── */
+.pin-inline-field {
+  pointer-events: auto;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  color: #e5e7eb;
+  font-size: 11px;
+  padding: 1px 4px;
+  height: 18px;
+  width: 60px;
+  outline: none;
+}
+
+.pin-inline-field:focus {
+  border-color: #60a5fa;
+}
+
+.pin-inline-field::placeholder {
+  color: #6b7280;
+  font-style: italic;
+}
+
+/* ── Flow toolbar (top-center) ── */
+.flow-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+}
+
+.flow-toolbar button {
+  background: #1f2937;
+  color: #d1d5db;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.flow-toolbar button:hover {
+  background: #374151;
+  border-color: #60a5fa;
+  color: #f3f4f6;
+}
+
+/* ── Context Menu (right-click to create nodes) ── */
+.ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 240px;
+  max-height: 380px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: ctx-appear 0.12s ease-out;
+}
+
+@keyframes ctx-appear {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.ctx-search-wrap {
+  padding: 8px 8px 4px;
+  border-bottom: 1px solid #334155;
+}
+
+.ctx-search {
+  width: 100%;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  color: #e5e7eb;
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.ctx-search:focus {
+  border-color: #60a5fa;
+}
+
+.ctx-search::placeholder {
+  color: #6b7280;
+}
+
+.ctx-list {
+  overflow-y: auto;
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+}
+
+.ctx-category {
+  padding: 6px 12px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+  user-select: none;
+}
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  color: #d1d5db;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.ctx-item--active {
+  background: #334155;
+  color: #f3f4f6;
+}
+
+.ctx-item-icon {
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.ctx-item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.ctx-item-type {
+  font-size: 10px;
+  color: #6b7280;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.ctx-item--active .ctx-item-type {
+  color: #9ca3af;
+}
+
+.ctx-empty {
+  padding: 16px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+/* ── Code Panel ── */
+.code-panel {
+  width: 360px;
+  min-width: 360px;
+  height: 100%;
+  background: #0f172a;
+  border-left: 1px solid #334155;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.2s ease, min-width 0.2s ease;
+  overflow: hidden;
+}
+
+.code-panel--collapsed {
+  width: 36px;
+  min-width: 36px;
+}
+
+.code-panel__header {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+  flex-shrink: 0;
+}
+
+.code-panel__title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #e5e7eb;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.code-panel__toggle {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.code-panel__toggle:hover {
+  color: #e5e7eb;
+}
+
+.code-panel__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.code-panel--collapsed .code-panel__body {
+  display: none;
+}
+
+.code-panel--collapsed .code-panel__title {
+  display: none;
+}
+
+.code-panel__code {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  color: #e5e7eb;
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+  min-height: 80px;
+}
+
+.code-panel__actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid #334155;
+  border-bottom: 1px solid #334155;
+  flex-shrink: 0;
+}
+
+.code-panel__btn {
+  background: #1e293b;
+  color: #d1d5db;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.code-panel__btn:hover {
+  background: #334155;
+  border-color: #60a5fa;
+  color: #f3f4f6;
+}
+
+.code-panel__btn--run {
+  background: #166534;
+  border-color: #22c55e;
+  color: #bbf7d0;
+}
+
+.code-panel__btn--run:hover {
+  background: #15803d;
+}
+
+.code-panel__btn--run:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.code-panel__btn--stop {
+  background: #7f1d1d;
+  border-color: #ef4444;
+  color: #fecaca;
+}
+
+.code-panel__btn--stop:hover {
+  background: #991b1b;
+}
+
+/* ── Syntax Highlighting ── */
+.hl-keyword { color: #c084fc; }
+.hl-number { color: #4ade80; }
+.hl-string { color: #fbbf24; }
+.hl-comment { color: #6b7280; font-style: italic; }
+
+/* ── Console ── */
+.code-panel__console {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 10px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  min-height: 60px;
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+}
+
+.console-log { color: #e5e7eb; }
+.console-error { color: #f87171; }
+.console-prompt { color: #60a5fa; }
+.console-input { color: #4ade80; font-style: italic; }
+
+/* ── Inline Prompt ── */
+.code-prompt {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid #334155;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.code-prompt-label {
+  font-size: 11px;
+  color: #60a5fa;
+  white-space: nowrap;
+}
+
+.code-prompt-input {
+  flex: 1;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  color: #e5e7eb;
+  font-size: 12px;
+  padding: 3px 6px;
+  outline: none;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.code-prompt-input:focus {
+  border-color: #60a5fa;
+}
