@@ -2,13 +2,13 @@ import type { NodeProps, Node } from '@xyflow/react';
 import type { BlueprintNodeData } from '../../types';
 import BlueprintNodeShell from './BlueprintNodeShell';
 
-export default function EndNode({ id, selected }: NodeProps<Node<BlueprintNodeData>>) {
+export default function BreakNode({ id, selected }: NodeProps<Node<BlueprintNodeData>>) {
   return (
     <BlueprintNodeShell
       nodeId={id}
-      label="End"
+      label="Break"
       headerColor="#ef4444"
-      icon="■"
+      icon="⊘"
       pinsLeft={[{ id: 'exec-in', kind: 'exec' }]}
       pinsRight={[]}
       selected={selected}

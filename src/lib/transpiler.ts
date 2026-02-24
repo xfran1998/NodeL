@@ -5,6 +5,11 @@ export interface TranspileResult {
   errors: string[];
 }
 
+export interface TranspileOptions {
+  /** When true, inject __onNode/__onVar calls for execution visualization */
+  instrument?: boolean;
+}
+
 const EXEC_HANDLES = new Set([
   'exec-in', 'exec-out', 'true', 'false', 'body', 'done',
 ]);
@@ -26,7 +31,7 @@ const COMPARE_OPS: Record<string, string> = {
   notEqual: '!==',
 };
 
-export function transpile(nodes: Node[], edges: Edge[]): TranspileResult {
+export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptions): TranspileResult {
   const errors: string[] = [];
 
   // ── Phase A: Build O(1) lookup indexes ──
@@ -52,6 +57,10 @@ export function transpile(nodes: Node[], edges: Edge[]): TranspileResult {
       m.set(th, { sourceId: e.source, sourceHandle: sh });
     }
   }
+
+  // Temp var tracking for arrayPop results
+  let popCounter = 0;
+  const popTempVars = new Map<string, string>();
 
   // ── Phase B: Resolve data expressions ──
   function resolveExpr(nodeId: string, handleOut: string, visited: Set<string>): string {
@@ -139,6 +148,30 @@ export function transpile(nodes: Node[], edges: Edge[]): TranspileResult {
       return varName;
     }
 
+    // ── Array data expressions ──
+
+    // ArrayPop value output — returns the temp var set during walkExec
+    if (type === 'arrayPop' && handleOut === 'value') {
+      const tempVar = popTempVars.get(nodeId);
+      if (tempVar) return tempVar;
+      // Fallback if pop hasn't been walked yet
+      const varName = (data.variable as string) || '_arr';
+      return `${varName}.pop()`;
+    }
+
+    // ArrayLength — pure data node
+    if (type === 'arrayLength') {
+      const varName = (data.variable as string) || '_arr';
+      return `${varName}.length`;
+    }
+
+    // ArrayGet — pure data node
+    if (type === 'arrayGet') {
+      const varName = (data.variable as string) || '_arr';
+      const index = inputExpr('index', '0');
+      return `${varName}[${index}]`;
+    }
+
     return '0';
   }
 
@@ -174,6 +207,11 @@ export function transpile(nodes: Node[], edges: Edge[]): TranspileResult {
     const type = node.type || '';
     const data = node.data as Record<string, unknown>;
 
+    // Inject execution instrumentation for all nodes except start
+    if (options?.instrument && type !== 'start') {
+      emitLine(`await __onNode("${nodeId}");`, indent);
+    }
+
     switch (type) {
       case 'start': {
         // Just follow exec-out
@@ -182,17 +220,28 @@ export function transpile(nodes: Node[], edges: Edge[]): TranspileResult {
         break;
       }
 
-      case 'end': {
-        // Stop — end of execution chain
-        break;
-      }
-
       case 'input': {
         const varName = (data.variable as string) || '_input';
-        const prompt = (data.prompt as string) || '';
+        // Resolve prompt from data pin (connected or inline)
+        const incoming = dataEdgesTo.get(nodeId);
+        const promptConn = incoming?.get('prompt');
+        let promptExpr: string;
+        if (promptConn) {
+          // Connected to another node — use expression directly
+          promptExpr = resolveExpr(promptConn.sourceId, promptConn.sourceHandle, new Set());
+        } else {
+          // Inline value or empty
+          const inl = (data.inlineValues as Record<string, string> | undefined);
+          const raw = inl?.['prompt'] ?? '';
+          const escaped = raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          promptExpr = `"${escaped}"`;
+        }
         const keyword = declaredVars.has(varName) ? '' : 'let ';
         declaredVars.add(varName);
-        emitLine(`${keyword}${varName} = parseFloat(await prompt("${prompt}"));`, indent);
+        emitLine(`${keyword}${varName} = parseFloat(await prompt(${promptExpr}));`, indent);
+        if (options?.instrument) {
+          emitLine(`await __onVar("${varName}", JSON.stringify(${varName}));`, indent);
+        }
         const next = execEdges.get(nodeId)?.get('exec-out');
         if (next) walkExec(next, indent, visited);
         break;
@@ -212,6 +261,9 @@ export function transpile(nodes: Node[], edges: Edge[]): TranspileResult {
         const keyword = declaredVars.has(varName) ? '' : 'let ';
         declaredVars.add(varName);
         emitLine(`${keyword}${varName} = ${expr};`, indent);
+        if (options?.instrument) {
+          emitLine(`await __onVar("${varName}", JSON.stringify(${varName}));`, indent);
+        }
         const next = execEdges.get(nodeId)?.get('exec-out');
         if (next) walkExec(next, indent, visited);
         break;
@@ -232,6 +284,9 @@ export function transpile(nodes: Node[], edges: Edge[]): TranspileResult {
       case 'while': {
         const cond = getInputExpr(nodeId, 'condition', 'false');
         emitLine(`while (${cond}) {`, indent);
+        if (options?.instrument) {
+          emitLine(`await __onNode("${nodeId}");`, indent + 1);
+        }
         const bodyTarget = execEdges.get(nodeId)?.get('body');
         if (bodyTarget) walkExec(bodyTarget, indent + 1, new Set(visited));
         emitLine(`}`, indent);
@@ -247,11 +302,82 @@ export function transpile(nodes: Node[], edges: Edge[]): TranspileResult {
         const paso = getInputExpr(nodeId, 'paso', '1');
         declaredVars.add(varName);
         emitLine(`for (let ${varName} = ${desde}; ${varName} < ${hasta}; ${varName} += ${paso}) {`, indent);
+        if (options?.instrument) {
+          emitLine(`await __onNode("${nodeId}");`, indent + 1);
+          emitLine(`await __onVar("${varName}", JSON.stringify(${varName}));`, indent + 1);
+        }
         const bodyTarget = execEdges.get(nodeId)?.get('body');
         if (bodyTarget) walkExec(bodyTarget, indent + 1, new Set(visited));
         emitLine(`}`, indent);
         const doneTarget = execEdges.get(nodeId)?.get('done');
         if (doneTarget) walkExec(doneTarget, indent, visited);
+        break;
+      }
+
+      // ── Array exec nodes ──
+
+      case 'arrayCreate': {
+        const varName = (data.variable as string) || '_arr';
+        const keyword = declaredVars.has(varName) ? '' : 'let ';
+        declaredVars.add(varName);
+        emitLine(`${keyword}${varName} = [];`, indent);
+        if (options?.instrument) {
+          emitLine(`await __onVar("${varName}", JSON.stringify(${varName}));`, indent);
+        }
+        const next = execEdges.get(nodeId)?.get('exec-out');
+        if (next) walkExec(next, indent, visited);
+        break;
+      }
+
+      case 'arrayPush': {
+        const varName = (data.variable as string) || '_arr';
+        const value = getInputExpr(nodeId, 'value');
+        emitLine(`${varName}.push(${value});`, indent);
+        if (options?.instrument) {
+          emitLine(`await __onVar("${varName}", JSON.stringify(${varName}));`, indent);
+        }
+        const next = execEdges.get(nodeId)?.get('exec-out');
+        if (next) walkExec(next, indent, visited);
+        break;
+      }
+
+      case 'arrayPop': {
+        const varName = (data.variable as string) || '_arr';
+        const tempVar = `__pop${popCounter++}`;
+        popTempVars.set(nodeId, tempVar);
+        emitLine(`let ${tempVar} = ${varName}.pop();`, indent);
+        if (options?.instrument) {
+          emitLine(`await __onVar("${varName}", JSON.stringify(${varName}));`, indent);
+        }
+        const next = execEdges.get(nodeId)?.get('exec-out');
+        if (next) walkExec(next, indent, visited);
+        break;
+      }
+
+      case 'arraySet': {
+        const varName = (data.variable as string) || '_arr';
+        const index = getInputExpr(nodeId, 'index', '0');
+        const value = getInputExpr(nodeId, 'value');
+        emitLine(`${varName}[${index}] = ${value};`, indent);
+        if (options?.instrument) {
+          emitLine(`await __onVar("${varName}", JSON.stringify(${varName}));`, indent);
+        }
+        const next = execEdges.get(nodeId)?.get('exec-out');
+        if (next) walkExec(next, indent, visited);
+        break;
+      }
+
+      // ── Loop control ──
+
+      case 'break': {
+        emitLine('break;', indent);
+        // No exec-out — break terminates the flow
+        break;
+      }
+
+      case 'continue': {
+        emitLine('continue;', indent);
+        // No exec-out — continue jumps to loop condition
         break;
       }
 

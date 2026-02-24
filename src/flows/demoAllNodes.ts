@@ -8,11 +8,10 @@ import type { Node, Edge } from '@xyflow/react';
 const COL = 280; // horizontal spacing between nodes
 const ROW = 260; // vertical spacing between category rows
 
-// ── Row 0: FLOW NODES (8) ──
+// ── Row 0: FLOW NODES (7) ──
 const flowY = 0;
 const flowNodes: Node[] = [
   { id: 'd-start', type: 'start', position: { x: 0 * COL, y: flowY }, data: {} },
-  { id: 'd-end', type: 'end', position: { x: 1 * COL, y: flowY }, data: {} },
   { id: 'd-input', type: 'input', position: { x: 2 * COL, y: flowY }, data: { variable: 'edad', prompt: 'Ingrese edad:' } },
   { id: 'd-output', type: 'output', position: { x: 3 * COL, y: flowY }, data: {} },
   { id: 'd-set', type: 'set', position: { x: 4 * COL, y: flowY }, data: { variable: 'total' } },

@@ -5,8 +5,8 @@ import type { Node, Edge } from '@xyflow/react';
  *
  * Layout:
  *   Row y=0   : Exec chain  → Start → Leer×3 → Set → If
- *   Row y=-160: Sí branch   → Append(inline:"Aprobado…", Get(promedio)) → Mostrar → End
- *   Row y=160 : No branch   → Append(inline:"Reprobado…", Get(promedio)) → Mostrar → End
+ *   Row y=-160: Sí branch   → Append(inline:"Aprobado…", Get(promedio)) → Mostrar
+ *   Row y=160 : No branch   → Append(inline:"Reprobado…", Get(promedio)) → Mostrar
  *   Row y=240 : Condition   → Get(promedio) → >=7 → feeds If.condition
  *   Row y=360+: Math        → Get(nota1,2,3) → Add → Add → ÷3 → feeds Set.value
  */
@@ -24,8 +24,6 @@ export const initialNodes: Node[] = [
   { id: 'getPromYes', type: 'get',    position: { x: 1560, y: -120 }, data: { variable: 'promedio' } },
   { id: 'concatYes',  type: 'concat', position: { x: 1820, y: -180 }, data: { inlineValues: { a: 'Aprobado, promedio: ' } } },
   { id: 'outYes',     type: 'output', position: { x: 2080, y: -160 }, data: {} },
-  { id: 'endYes',     type: 'end',    position: { x: 2340, y: -160 }, data: {} },
-
   // ── No branch (y=160) ──
   { id: 'getPromNo',  type: 'get',    position: { x: 1560, y: 200 },  data: { variable: 'promedio' } },
   { id: 'concatNo',   type: 'concat', position: { x: 1820, y: 140 },  data: { inlineValues: { a: 'Reprobado, promedio: ' } } },
@@ -53,11 +51,8 @@ export const initialEdges: Edge[] = [
   { id: 'e5', source: 'setProm', sourceHandle: 'exec-out', target: 'ifApproved', targetHandle: 'exec-in', type: 'exec' },
   // If → Sí branch
   { id: 'e6', source: 'ifApproved', sourceHandle: 'true', target: 'outYes', targetHandle: 'exec-in', type: 'exec' },
-  { id: 'e7', source: 'outYes', sourceHandle: 'exec-out', target: 'endYes', targetHandle: 'exec-in', type: 'exec' },
   // If → No branch
   { id: 'e8', source: 'ifApproved', sourceHandle: 'false', target: 'outNo', targetHandle: 'exec-in', type: 'exec' },
-  { id: 'e9', source: 'outNo', sourceHandle: 'exec-out', target: 'endYes', targetHandle: 'exec-in', type: 'exec' },
-
   // ── Data: (nota1 + nota2) ──
   { id: 'd1', source: 'get1', sourceHandle: 'value', target: 'add1', targetHandle: 'a', type: 'data', data: { dataType: 'number' } },
   { id: 'd2', source: 'get2', sourceHandle: 'value', target: 'add1', targetHandle: 'b', type: 'data', data: { dataType: 'number' } },

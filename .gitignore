@@ -21,3 +21,9 @@ npm-debug.log*
 
 # Tool output
 .playwright-mcp/
+
+# Build cache
+tsconfig.tsbuildinfo
+
+# User flow data
+canvascoder-flow.json

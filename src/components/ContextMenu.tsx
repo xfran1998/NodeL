@@ -58,10 +58,29 @@ const NODE_CATALOG: Category[] = [
     ],
   },
   {
+    name: 'Array',
+    entries: [
+      { type: 'arrayCreate', label: 'Array', icon: '[ ]', color: '#06b6d4' },
+      { type: 'arrayPush', label: 'Push', icon: '⊕', color: '#06b6d4' },
+      { type: 'arrayPop', label: 'Pop', icon: '⊖', color: '#06b6d4' },
+      { type: 'arrayLength', label: 'Length', icon: '#', color: '#06b6d4' },
+      { type: 'arrayGet', label: 'Get[i]', icon: '[i]', color: '#06b6d4' },
+      { type: 'arraySet', label: 'Set[i]', icon: '[=]', color: '#06b6d4' },
+    ],
+  },
+  {
     name: 'Special',
     entries: [
       { type: 'random', label: 'Random', icon: '\uD83C\uDFB2', color: '#f472b6' },
       { type: 'not', label: 'Not', icon: '!', color: '#60a5fa' },
+      { type: 'break', label: 'Break', icon: '⊘', color: '#ef4444' },
+      { type: 'continue', label: 'Continue', icon: '↷', color: '#f59e0b' },
+    ],
+  },
+  {
+    name: 'Layout',
+    entries: [
+      { type: 'comment', label: 'Comment', icon: '💬', color: '#6b7280' },
     ],
   },
 ];
@@ -71,9 +90,11 @@ interface ContextMenuProps {
   y: number;
   onSelect: (type: string) => void;
   onClose: () => void;
+  /** When provided, only show node types for which this returns true */
+  filter?: (type: string) => boolean;
 }
 
-export default function ContextMenu({ x, y, onSelect, onClose }: ContextMenuProps) {
+export default function ContextMenu({ x, y, onSelect, onClose, filter }: ContextMenuProps) {
   const [search, setSearch] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +106,8 @@ export default function ContextMenu({ x, y, onSelect, onClose }: ContextMenuProp
     const results: { entry: NodeEntry; category: string }[] = [];
     for (const cat of NODE_CATALOG) {
       for (const entry of cat.entries) {
+        // Apply external compatibility filter first
+        if (filter && !filter(entry.type)) continue;
         if (
           !q ||
           entry.label.toLowerCase().includes(q) ||
@@ -96,7 +119,7 @@ export default function ContextMenu({ x, y, onSelect, onClose }: ContextMenuProp
       }
     }
     return results;
-  }, [search]);
+  }, [search, filter]);
 
   // Group filtered results by category for rendering
   const groupedFiltered = useMemo(() => {

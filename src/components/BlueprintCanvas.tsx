@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -12,18 +12,21 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
+import type { DataType } from '../types';
 import { nodeTypes } from './nodes';
 import { edgeTypes } from './edges';
 import ContextMenu from './ContextMenu';
 import { GRID_SIZE } from '../constants';
 import useFlowStore, { EXEC_HANDLES } from '../hooks/useFlowStore';
+import useExecutionStore from '../hooks/useExecutionStore';
 import { initialNodes, initialEdges } from '../flows/initialFlow';
 import { demoNodes, demoEdges } from '../flows/demoAllNodes';
+import { exportToFile, importFromFile, encodeFlowToHash } from '../lib/persistence';
+import { PIN_REGISTRY, findCompatiblePin, hasCompatiblePin } from '../lib/pinRegistry';
 
 const MINIMAP_COLORS: Record<string, string> = {
   // Flow
   start: '#22c55e',
-  end: '#ef4444',
   input: '#06b6d4',
   output: '#3b82f6',
   set: '#a855f7',
@@ -48,23 +51,72 @@ const MINIMAP_COLORS: Record<string, string> = {
   // Special
   random: '#f472b6',
   not: '#60a5fa',
+  // Array
+  arrayCreate: '#06b6d4',
+  arrayPush: '#06b6d4',
+  arrayPop: '#06b6d4',
+  arrayLength: '#06b6d4',
+  arrayGet: '#06b6d4',
+  arraySet: '#06b6d4',
+  // Loop control
+  break: '#ef4444',
+  continue: '#f59e0b',
+  // Layout
+  comment: '#6b7280',
 };
 
 function FlowToolbar() {
+  const nodes = useFlowStore((s) => s.nodes);
+  const edges = useFlowStore((s) => s.edges);
   const loadFlow = useFlowStore((s) => s.loadFlow);
   const { fitView } = useReactFlow();
+  const [shareLabel, setShareLabel] = useState('Share');
 
   const load = useCallback(
-    (nodes: typeof initialNodes, edges: typeof initialEdges) => {
-      loadFlow(nodes, edges);
-      // Wait for React to render new nodes before fitting
+    (n: typeof initialNodes, e: typeof initialEdges) => {
+      loadFlow(n, e);
       setTimeout(() => fitView({ padding: 0.3 }), 50);
     },
     [loadFlow, fitView],
   );
 
+  const handleNew = useCallback(() => {
+    load(
+      [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 }, data: {} },
+      ],
+      [],
+    );
+  }, [load]);
+
+  const handleExport = useCallback(() => {
+    exportToFile(nodes, edges);
+  }, [nodes, edges]);
+
+  const handleImport = useCallback(async () => {
+    try {
+      const data = await importFromFile();
+      load(data.nodes, data.edges);
+    } catch {
+      // User cancelled or invalid file
+    }
+  }, [load]);
+
+  const handleShare = useCallback(() => {
+    const hash = encodeFlowToHash(nodes, edges);
+    const url = `${window.location.origin}${window.location.pathname}#${hash}`;
+    navigator.clipboard.writeText(url);
+    setShareLabel('Copied!');
+    setTimeout(() => setShareLabel('Share'), 2000);
+  }, [nodes, edges]);
+
   return (
     <div className="flow-toolbar">
+      <button onClick={handleNew}>New</button>
+      <button onClick={handleExport}>Export</button>
+      <button onClick={handleImport}>Import</button>
+      <button onClick={handleShare}>{shareLabel}</button>
+      <div className="flow-toolbar__sep" />
       <button onClick={() => load(initialNodes, initialEdges)}>
         Promedio de Notas
       </button>
@@ -81,12 +133,140 @@ const isValidConnection = (connection: Edge | Connection) => {
   return srcIsExec === tgtIsExec;
 };
 
-export default function BlueprintCanvas() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, onReconnect, deleteEdge, deleteSelectedNodes, addNode, copySelectedNodes, pasteNodes, undo, redo, onNodeDragStart, onNodeDragStop } =
-    useFlowStore();
-  const { screenToFlowPosition, getViewport } = useReactFlow();
+/** Info about a connection drag that was dropped on the canvas */
+interface PendingConn {
+  nodeId: string;
+  handleId: string;
+  handleType: 'source' | 'target';
+  pinKind: 'exec' | 'data';
+  dataType?: DataType;
+}
 
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; flowX: number; flowY: number } | null>(null);
+interface CtxMenuState {
+  x: number;
+  y: number;
+  flowX: number;
+  flowY: number;
+  /** Present when the menu was triggered by dropping a connection on the canvas */
+  pending?: PendingConn;
+}
+
+export default function BlueprintCanvas() {
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, onReconnect, deleteEdge, deleteSelectedNodes, addNode, addNodeWithEdge, copySelectedNodes, pasteNodes, undo, redo, onNodeDragStart, onNodeDragStop } =
+    useFlowStore();
+  const { screenToFlowPosition, getViewport, setCenter } = useReactFlow();
+
+  // ── Follow active node during execution ──
+  const executingNodeId = useExecutionStore((s) => s.executingNodeId);
+  const followActiveNode = useExecutionStore((s) => s.followActiveNode);
+  const stepDelay = useExecutionStore((s) => s.stepDelay);
+
+  useEffect(() => {
+    if (!followActiveNode || !executingNodeId || stepDelay === 0) return;
+    const node = nodes.find((n) => n.id === executingNodeId);
+    if (!node) return;
+
+    // Estimate node center (position is top-left corner)
+    const width = (node.measured?.width ?? node.width ?? 160);
+    const height = (node.measured?.height ?? node.height ?? 40);
+    const cx = node.position.x + width / 2;
+    const cy = node.position.y + height / 2;
+
+    setCenter(cx, cy, { duration: 300, zoom: getViewport().zoom });
+  }, [executingNodeId, followActiveNode, stepDelay, nodes, setCenter, getViewport]);
+
+  const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
+
+  // ── Connection-drop tracking ──
+  const pendingConnRef = useRef<PendingConn | null>(null);
+  /** Set to true when onConnect fires, so handleConnectEnd knows a connection was made */
+  const connectionMadeRef = useRef(false);
+
+  const wrappedOnConnect = useCallback(
+    (conn: Connection) => {
+      connectionMadeRef.current = true;
+      onConnect(conn);
+    },
+    [onConnect],
+  );
+
+  /** Remember which pin the user started dragging from */
+  const handleConnectStart = useCallback(
+    (_event: MouseEvent | TouchEvent, params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null }) => {
+      if (!params.nodeId || !params.handleId || !params.handleType) return;
+
+      // Look up data type from pin registry
+      const currentNodes = useFlowStore.getState().nodes;
+      const node = currentNodes.find((n) => n.id === params.nodeId);
+      if (!node) return;
+
+      const pinKind: 'exec' | 'data' = EXEC_HANDLES.has(params.handleId) ? 'exec' : 'data';
+
+      let dataType: DataType | undefined;
+      if (pinKind === 'data') {
+        const nodePins = PIN_REGISTRY[node.type || ''];
+        if (nodePins) {
+          const side = params.handleType === 'source' ? nodePins.right : nodePins.left;
+          const pin = side.find((p) => p.id === params.handleId);
+          dataType = pin?.dataType;
+        }
+      }
+
+      pendingConnRef.current = {
+        nodeId: params.nodeId,
+        handleId: params.handleId,
+        handleType: params.handleType,
+        pinKind,
+        dataType,
+      };
+    },
+    [],
+  );
+
+  /** If the connection drag was dropped on empty canvas, show filtered context menu */
+  const handleConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent) => {
+      // If onConnect already fired (proximity snap), skip the modal
+      if (connectionMadeRef.current) {
+        connectionMadeRef.current = false;
+        pendingConnRef.current = null;
+        return;
+      }
+
+      const target = (event as MouseEvent).target as HTMLElement | null;
+
+      // If dropped on a handle, connection was handled normally
+      if (target?.closest('.react-flow__handle')) {
+        pendingConnRef.current = null;
+        return;
+      }
+
+      const pending = pendingConnRef.current;
+      if (!pending) return;
+
+      const clientX = 'clientX' in event ? event.clientX : (event as TouchEvent).changedTouches[0]?.clientX || 0;
+      const clientY = 'clientY' in event ? event.clientY : (event as TouchEvent).changedTouches[0]?.clientY || 0;
+      const flowPos = screenToFlowPosition({ x: clientX, y: clientY });
+
+      setCtxMenu({
+        x: clientX,
+        y: clientY,
+        flowX: flowPos.x,
+        flowY: flowPos.y,
+        pending,
+      });
+      // Don't clear pendingConnRef — needed when the user picks a node
+    },
+    [screenToFlowPosition],
+  );
+
+  // ── Compatibility filter for the context menu ──
+  const ctxFilter = useMemo(() => {
+    if (!ctxMenu?.pending) return undefined;
+    const { handleType, pinKind, dataType } = ctxMenu.pending;
+    return (nodeType: string) =>
+      hasCompatiblePin(nodeType, handleType, pinKind, dataType);
+  }, [ctxMenu]);
 
   /** Alt+Click on a wire to disconnect it (like UE Blueprints) */
   const handleEdgeClick = useCallback(
@@ -109,10 +289,11 @@ export default function BlueprintCanvas() {
     [deleteEdge],
   );
 
-  /** Right-click on empty canvas → show context menu */
+  /** Right-click on empty canvas → show context menu (no filter) */
   const handlePaneContextMenu = useCallback(
     (event: MouseEvent | React.MouseEvent) => {
       event.preventDefault();
+      pendingConnRef.current = null; // clear any stale pending
       const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       setCtxMenu({
         x: event.clientX,
@@ -126,28 +307,64 @@ export default function BlueprintCanvas() {
 
   const handleCtxSelect = useCallback(
     (type: string) => {
-      if (ctxMenu) {
-        // Snap to grid
-        const snappedX = Math.round(ctxMenu.flowX / GRID_SIZE) * GRID_SIZE;
-        const snappedY = Math.round(ctxMenu.flowY / GRID_SIZE) * GRID_SIZE;
+      if (!ctxMenu) return;
+
+      const snappedX = Math.round(ctxMenu.flowX / GRID_SIZE) * GRID_SIZE;
+      const snappedY = Math.round(ctxMenu.flowY / GRID_SIZE) * GRID_SIZE;
+
+      if (ctxMenu.pending) {
+        // Auto-connect mode: create node + wire in one shot
+        const { pending } = ctxMenu;
+        const newNodeHandle = findCompatiblePin(
+          type,
+          pending.handleType,
+          pending.pinKind,
+          pending.dataType,
+        );
+
+        if (newNodeHandle) {
+          addNodeWithEdge(type, { x: snappedX, y: snappedY }, {
+            existingNodeId: pending.nodeId,
+            existingHandle: pending.handleId,
+            newNodeHandle,
+            existingIsSource: pending.handleType === 'source',
+          });
+        } else {
+          addNode(type, { x: snappedX, y: snappedY });
+        }
+      } else {
         addNode(type, { x: snappedX, y: snappedY });
       }
+
+      pendingConnRef.current = null;
       setCtxMenu(null);
     },
-    [ctxMenu, addNode],
+    [ctxMenu, addNode, addNodeWithEdge],
   );
 
-  const handleCtxClose = useCallback(() => setCtxMenu(null), []);
+  const handleCtxClose = useCallback(() => {
+    pendingConnRef.current = null;
+    setCtxMenu(null);
+  }, []);
 
   /** Close context menu on pane click */
   const handlePaneClick = useCallback(() => {
-    if (ctxMenu) setCtxMenu(null);
+    if (ctxMenu) {
+      pendingConnRef.current = null;
+      setCtxMenu(null);
+    }
   }, [ctxMenu]);
 
-  /** Ctrl+C / Ctrl+V for copy-paste nodes */
+  /** Keyboard shortcuts */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore when typing in an input/textarea
+      // Ctrl+S — prevent browser save; auto-save is always active
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        return;
+      }
+
+      // Ignore other shortcuts when typing in an input/textarea
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
@@ -194,15 +411,18 @@ export default function BlueprintCanvas() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
+        onConnect={wrappedOnConnect}
         onReconnect={onReconnect}
         onReconnectEnd={handleReconnectEnd}
+        onConnectStart={handleConnectStart}
+        onConnectEnd={handleConnectEnd}
         onEdgeClick={handleEdgeClick}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onPaneContextMenu={handlePaneContextMenu}
         onPaneClick={handlePaneClick}
-        reconnectRadius={20}
+        connectionRadius={40}
+        reconnectRadius={40}
         isValidConnection={isValidConnection}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -238,6 +458,7 @@ export default function BlueprintCanvas() {
           y={ctxMenu.y}
           onSelect={handleCtxSelect}
           onClose={handleCtxClose}
+          filter={ctxFilter}
         />
       )}
     </div>

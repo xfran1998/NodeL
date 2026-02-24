@@ -11,11 +11,35 @@ import {
   applyEdgeChanges,
   addEdge,
 } from '@xyflow/react';
+import type { DataType } from '../types';
 import { initialNodes, initialEdges } from '../flows/initialFlow';
 import useTemporalStore, { type Snapshot } from './useTemporalStore';
+import {
+  saveToLocalStorage,
+  loadFromLocalStorage,
+  decodeFlowFromHash,
+} from '../lib/persistence';
+
+/** Resolve initial flow: URL hash → localStorage → built-in demo */
+function getInitialFlow(): { nodes: Node[]; edges: Edge[] } {
+  const hash = window.location.hash.slice(1);
+  if (hash) {
+    const fromHash = decodeFlowFromHash(hash);
+    if (fromHash) {
+      // Clear hash so it doesn't reload on refresh
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      return fromHash;
+    }
+  }
+  const fromStorage = loadFromLocalStorage();
+  if (fromStorage) return fromStorage;
+  return { nodes: initialNodes, edges: initialEdges };
+}
+
+const _initial = getInitialFlow();
 
 /** Node types that are singletons and cannot be deleted or duplicated */
-const SINGLETON_TYPES = new Set(['start', 'end']);
+const SINGLETON_TYPES = new Set(['start']);
 
 /** Handle IDs that carry exec flow (not data) */
 export const EXEC_HANDLES = new Set([
@@ -27,14 +51,49 @@ export const EXEC_HANDLES = new Set([
   'done',
 ]);
 
+/** Source pin data types: nodeType → handleId → DataType */
+const SOURCE_PIN_TYPES: Record<string, Record<string, DataType>> = {
+  get: { value: 'any' },
+  set: { 'out-value': 'any' },
+  for: { i: 'number' },
+  add: { result: 'number' },
+  subtract: { result: 'number' },
+  multiply: { result: 'number' },
+  divide: { result: 'number' },
+  modulo: { result: 'number' },
+  greater: { result: 'boolean' },
+  less: { result: 'boolean' },
+  equal: { result: 'boolean' },
+  greaterEq: { result: 'boolean' },
+  lessEq: { result: 'boolean' },
+  notEqual: { result: 'boolean' },
+  concat: { result: 'string' },
+  random: { value: 'number' },
+  not: { result: 'boolean' },
+  arrayPop: { value: 'any' },
+  arrayLength: { value: 'number' },
+  arrayGet: { value: 'any' },
+};
+
+function getSourcePinDataType(nodeType: string, handleId: string): DataType {
+  return SOURCE_PIN_TYPES[nodeType]?.[handleId] || 'any';
+}
+
 /** Build a typed edge from a connection */
-function connectionToEdge(connection: Connection): Edge {
+function connectionToEdge(connection: Connection, nodes: Node[]): Edge {
   const srcIsExec = EXEC_HANDLES.has(connection.sourceHandle || '');
+  let dataType: DataType = 'any';
+  if (!srcIsExec) {
+    const srcNode = nodes.find((n) => n.id === connection.source);
+    if (srcNode) {
+      dataType = getSourcePinDataType(srcNode.type || '', connection.sourceHandle || '');
+    }
+  }
   return {
     ...connection,
     id: `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`,
     type: srcIsExec ? 'exec' : 'data',
-    data: srcIsExec ? {} : { dataType: 'any' },
+    data: srcIsExec ? {} : { dataType },
   };
 }
 
@@ -67,6 +126,17 @@ interface FlowState {
   deleteSelectedNodes: () => void;
   updateNodeData: (nodeId: string, data: Record<string, unknown>) => void;
   addNode: (type: string, position: { x: number; y: number }) => void;
+  /** Create a node and auto-connect it to an existing pin */
+  addNodeWithEdge: (
+    type: string,
+    position: { x: number; y: number },
+    conn: {
+      existingNodeId: string;
+      existingHandle: string;
+      newNodeHandle: string;
+      existingIsSource: boolean;
+    },
+  ) => void;
   copySelectedNodes: () => void;
   pasteNodes: (viewportCenter: { x: number; y: number }) => void;
   loadFlow: (nodes: Node[], edges: Edge[]) => void;
@@ -77,12 +147,12 @@ interface FlowState {
 }
 
 const useFlowStore = create<FlowState>((set, get) => ({
-  nodes: initialNodes,
-  edges: initialEdges,
+  nodes: _initial.nodes,
+  edges: _initial.edges,
   clipboard: null,
   _dragSnapshot: null,
   onNodesChange: (changes) => {
-    // Prevent removal of singleton nodes (start/end) via ReactFlow internals
+    // Prevent removal of singleton nodes (start) via ReactFlow internals
     const safeChanges = changes.filter((c) => {
       if (c.type === 'remove') {
         const node = get().nodes.find((n) => n.id === c.id);
@@ -108,7 +178,7 @@ const useFlowStore = create<FlowState>((set, get) => ({
     if (srcIsExec !== tgtIsExec) return;
 
     saveSnapshot(get);
-    set({ edges: addEdge(connectionToEdge(connection), get().edges) });
+    set({ edges: addEdge(connectionToEdge(connection, get().nodes), get().edges) });
   },
   /** Replace an existing edge with a new connection (drag-reconnect) */
   onReconnect: (oldEdge, newConnection) => {
@@ -118,7 +188,7 @@ const useFlowStore = create<FlowState>((set, get) => ({
 
     saveSnapshot(get);
     const updated = get().edges.filter((e) => e.id !== oldEdge.id);
-    set({ edges: addEdge(connectionToEdge(newConnection), updated) });
+    set({ edges: addEdge(connectionToEdge(newConnection, get().nodes), updated) });
   },
   /** Remove a single edge by id (Alt+click) */
   deleteEdge: (edgeId) => {
@@ -163,8 +233,35 @@ const useFlowStore = create<FlowState>((set, get) => ({
     if (SINGLETON_TYPES.has(type) && get().nodes.some((n) => n.type === type)) return;
     saveSnapshot(get);
     const id = `${type}-${Date.now()}`;
-    const newNode: Node = { id, type, position, data: {} };
+    const newNode: Node = {
+      id,
+      type,
+      position,
+      data: {},
+      ...(type === 'comment' ? { style: { width: 300, height: 200 } } : {}),
+    };
     set({ nodes: [...get().nodes, newNode] });
+  },
+  addNodeWithEdge: (type, position, conn) => {
+    if (SINGLETON_TYPES.has(type) && get().nodes.some((n) => n.type === type)) return;
+    saveSnapshot(get);
+    const id = `${type}-${Date.now()}`;
+    const newNode: Node = { id, type, position, data: {} };
+    const allNodes = [...get().nodes, newNode];
+
+    // Build connection: existing node ↔ new node
+    const source = conn.existingIsSource ? conn.existingNodeId : id;
+    const sourceHandle = conn.existingIsSource ? conn.existingHandle : conn.newNodeHandle;
+    const target = conn.existingIsSource ? id : conn.existingNodeId;
+    const targetHandle = conn.existingIsSource ? conn.newNodeHandle : conn.existingHandle;
+
+    const connection: Connection = { source, sourceHandle, target, targetHandle };
+    const newEdge = connectionToEdge(connection, allNodes);
+
+    set({
+      nodes: allNodes,
+      edges: addEdge(newEdge, get().edges),
+    });
   },
   copySelectedNodes: () => {
     const { nodes, edges } = get();
@@ -264,5 +361,14 @@ const useFlowStore = create<FlowState>((set, get) => ({
     }
   },
 }));
+
+/** Auto-save to localStorage (debounced 500ms) */
+let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+useFlowStore.subscribe((state) => {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    saveToLocalStorage(state.nodes, state.edges);
+  }, 500);
+});
 
 export default useFlowStore;

@@ -1,7 +1,9 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import useFlowStore from '../hooks/useFlowStore';
+import useExecutionStore from '../hooks/useExecutionStore';
 import { transpile } from '../lib/transpiler';
-import { executeCode, stopExecution } from '../lib/execution';
+import { executeCode, stopExecution, stepForward } from '../lib/execution';
+import VariableInspector from './VariableInspector';
 
 interface ConsoleEntry {
   type: 'log' | 'error' | 'prompt' | 'input';
@@ -44,6 +46,7 @@ export default function CodePanel() {
   const consoleRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<HTMLInputElement>(null);
 
+  // Clean code for display
   const { code, errors } = useMemo(() => transpile(nodes, edges), [nodes, edges]);
 
   // Auto-scroll console
@@ -65,7 +68,15 @@ export default function CodePanel() {
     setConsoleEntries([]);
     setIsRunning(true);
 
-    await executeCode(code, {
+    const execStore = useExecutionStore.getState();
+    execStore.reset();
+    execStore.setIsRunning(true);
+
+    const stepDelay = useExecutionStore.getState().stepDelay;
+    // Only instrument when not in instant mode — instant skips all animation
+    const { code: instrumentedCode } = transpile(nodes, edges, { instrument: stepDelay !== 0 });
+
+    await executeCode(instrumentedCode, {
       onLog: (text) => setConsoleEntries((prev) => [...prev, { type: 'log', text }]),
       onPrompt: (message) => {
         return new Promise<string>((resolve) => {
@@ -78,15 +89,28 @@ export default function CodePanel() {
       onComplete: () => {
         setIsRunning(false);
         setPromptState(null);
+        useExecutionStore.getState().setExecutingNode(null);
+        useExecutionStore.getState().setIsRunning(false);
       },
-    });
-  }, [code, isRunning]);
+      onNodeEnter: (nodeId) => {
+        useExecutionStore.getState().setExecutingNode(nodeId);
+      },
+      onVarUpdate: (name, value) => {
+        useExecutionStore.getState().setVariable(name, value);
+      },
+    }, { stepDelay });
+  }, [code, isRunning, nodes, edges]);
 
   const handleStop = useCallback(() => {
     stopExecution();
     setIsRunning(false);
     setPromptState(null);
     setConsoleEntries((prev) => [...prev, { type: 'error', text: 'Execution stopped.' }]);
+    useExecutionStore.getState().reset();
+  }, []);
+
+  const handleStep = useCallback(() => {
+    stepForward();
   }, []);
 
   const handleCopy = useCallback(() => {
@@ -104,6 +128,10 @@ export default function CodePanel() {
     setPromptState(null);
     setPromptInput('');
   }, [promptState, promptInput]);
+
+  const stepDelay = useExecutionStore((s) => s.stepDelay);
+  const followActiveNode = useExecutionStore((s) => s.followActiveNode);
+  const isStepMode = stepDelay < 0;
 
   const panelClass = `code-panel${isOpen ? '' : ' code-panel--collapsed'}`;
 
@@ -141,8 +169,35 @@ export default function CodePanel() {
               Run
             </button>
           ) : (
-            <button className="code-panel__btn code-panel__btn--stop" onClick={handleStop}>
-              Stop
+            <>
+              <button className="code-panel__btn code-panel__btn--stop" onClick={handleStop}>
+                Stop
+              </button>
+              {isStepMode && (
+                <button className="code-panel__btn code-panel__btn--step" onClick={handleStep}>
+                  Next
+                </button>
+              )}
+            </>
+          )}
+          <select
+            className="code-panel__btn"
+            value={stepDelay}
+            onChange={(e) => useExecutionStore.getState().setStepDelay(Number(e.target.value))}
+          >
+            <option value={0}>Instant</option>
+            <option value={100}>Fast</option>
+            <option value={500}>Normal</option>
+            <option value={1000}>Slow</option>
+            <option value={-1}>Step</option>
+          </select>
+          {stepDelay !== 0 && (
+            <button
+              className={`code-panel__btn code-panel__btn--follow${followActiveNode ? ' active' : ''}`}
+              onClick={() => useExecutionStore.getState().toggleFollowActiveNode()}
+              title={followActiveNode ? 'Dejar de seguir nodo activo' : 'Seguir nodo activo'}
+            >
+              {followActiveNode ? '⊚' : '◎'}
             </button>
           )}
           <button className="code-panel__btn" onClick={handleCopy}>
@@ -159,6 +214,7 @@ export default function CodePanel() {
             </div>
           ))}
         </div>
+        <VariableInspector />
         {promptState && (
           <div className="code-prompt">
             <span className="code-prompt-label">Input:</span>

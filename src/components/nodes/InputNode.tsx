@@ -6,7 +6,7 @@ import useFlowStore from '../../hooks/useFlowStore';
 export default function InputNode({ id, data, selected }: NodeProps<Node<BlueprintNodeData>>) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
   const varName = (data.variable as string) || '';
-  const prompt = (data.prompt as string) || '';
+  const inlineValues = (data.inlineValues as Record<string, string>) || {};
 
   return (
     <BlueprintNodeShell
@@ -14,9 +14,16 @@ export default function InputNode({ id, data, selected }: NodeProps<Node<Bluepri
       label="Leer"
       headerColor="#06b6d4"
       icon="📥"
-      pinsLeft={[{ id: 'exec-in', kind: 'exec' }]}
+      pinsLeft={[
+        { id: 'exec-in', kind: 'exec' },
+        { id: 'prompt', kind: 'data', label: 'prompt', dataType: 'string', inline: true },
+      ]}
       pinsRight={[{ id: 'exec-out', kind: 'exec' }]}
       selected={selected}
+      inlineValues={inlineValues}
+      onInlineChange={(pinId, value) =>
+        updateNodeData(id, { inlineValues: { ...inlineValues, [pinId]: value } })
+      }
     >
       <div className="blueprint-field">
         <label>Var</label>
@@ -26,16 +33,6 @@ export default function InputNode({ id, data, selected }: NodeProps<Node<Bluepri
           className="nodrag"
           placeholder="variable"
           onChange={(e) => updateNodeData(id, { variable: e.target.value })}
-        />
-      </div>
-      <div className="blueprint-field">
-        <label>Prompt</label>
-        <input
-          type="text"
-          value={prompt}
-          className="nodrag"
-          placeholder="mensaje"
-          onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
         />
       </div>
     </BlueprintNodeShell>

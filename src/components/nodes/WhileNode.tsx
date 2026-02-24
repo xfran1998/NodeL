@@ -14,8 +14,8 @@ export default function WhileNode({ id, selected }: NodeProps<Node<BlueprintNode
         { id: 'condition', kind: 'data', label: 'condition', dataType: 'boolean' },
       ]}
       pinsRight={[
-        { id: 'body', kind: 'exec', label: 'Cuerpo' },
         { id: 'done', kind: 'exec', label: 'Fin' },
+        { id: 'body', kind: 'exec', label: 'Cuerpo' },
       ]}
       selected={selected}
     />

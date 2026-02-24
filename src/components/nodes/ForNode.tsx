@@ -21,8 +21,8 @@ export default function ForNode({ id, data, selected }: NodeProps<Node<Blueprint
         { id: 'paso', kind: 'data', label: 'paso', dataType: 'number', inline: true },
       ]}
       pinsRight={[
-        { id: 'body', kind: 'exec', label: 'Cuerpo' },
         { id: 'done', kind: 'exec', label: 'Fin' },
+        { id: 'body', kind: 'exec', label: 'Cuerpo' },
         { id: 'i', kind: 'data', label: 'i', dataType: 'number' },
       ]}
       selected={selected}

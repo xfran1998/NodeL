@@ -2,7 +2,6 @@ import type { NodeTypes } from '@xyflow/react';
 
 // Flow nodes (with exec pins)
 import StartNode from './StartNode';
-import EndNode from './EndNode';
 import InputNode from './InputNode';
 import OutputNode from './OutputNode';
 import SetNode from './SetNode';
@@ -39,10 +38,26 @@ import ConcatNode from './ConcatNode';
 import RandomNode from './RandomNode';
 import NotNode from './NotNode';
 
+// Array nodes
+import {
+  ArrayCreateNode,
+  ArrayPushNode,
+  ArrayPopNode,
+  ArrayLengthNode,
+  ArrayGetNode,
+  ArraySetNode,
+} from './ArrayNodes';
+
+// Loop control nodes
+import BreakNode from './BreakNode';
+import ContinueNode from './ContinueNode';
+
+// Layout nodes
+import CommentNode from './CommentNode';
+
 export const nodeTypes: NodeTypes = {
-  // Flow (8)
+  // Flow (7)
   start: StartNode,
-  end: EndNode,
   input: InputNode,
   output: OutputNode,
   set: SetNode,
@@ -69,4 +84,16 @@ export const nodeTypes: NodeTypes = {
   // Special (2)
   random: RandomNode,
   not: NotNode,
+  // Array (6)
+  arrayCreate: ArrayCreateNode,
+  arrayPush: ArrayPushNode,
+  arrayPop: ArrayPopNode,
+  arrayLength: ArrayLengthNode,
+  arrayGet: ArrayGetNode,
+  arraySet: ArraySetNode,
+  // Loop control (2)
+  break: BreakNode,
+  continue: ContinueNode,
+  // Layout (1)
+  comment: CommentNode,
 };

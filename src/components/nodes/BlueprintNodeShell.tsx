@@ -6,6 +6,7 @@ import {
   PIN_GAP,
   TYPE_COLORS,
 } from '../../constants';
+import useExecutionStore from '../../hooks/useExecutionStore';
 
 interface Props {
   nodeId: string;
@@ -66,6 +67,8 @@ export default function BlueprintNodeShell({
   onInlineChange,
   className,
 }: Props) {
+  const isExecuting = useExecutionStore((s) => s.executingNodeId === nodeId);
+
   const leftSplit = splitPins(rawLeft);
   const rightSplit = splitPins(rawRight);
 
@@ -90,7 +93,7 @@ export default function BlueprintNodeShell({
 
   return (
     <div
-      className={`blueprint-node${selected ? ' selected' : ''}${className ? ` ${className}` : ''}`}
+      className={`blueprint-node${selected ? ' selected' : ''}${isExecuting ? ' blueprint-node--executing' : ''}${className ? ` ${className}` : ''}`}
     >
       {/* ── Header ── */}
       <div

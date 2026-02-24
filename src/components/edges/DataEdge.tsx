@@ -29,11 +29,15 @@ export default function DataEdge({
   const color = TYPE_COLORS[(data?.dataType as string) || 'any'];
 
   return (
-    <path
-      id={id}
-      className="data-edge-path"
-      d={edgePath}
-      style={{ stroke: color }}
-    />
+    <>
+      {/* Invisible wider path for easier click/hover detection */}
+      <path d={edgePath} style={{ stroke: 'transparent', strokeWidth: 20, fill: 'none' }} />
+      <path
+        id={id}
+        className="data-edge-path"
+        d={edgePath}
+        style={{ stroke: color }}
+      />
+    </>
   );
 }
