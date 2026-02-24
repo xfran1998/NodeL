@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import type { DataType, FunctionDef, FunctionParam } from '../types';
 import { GRID_SIZE, NODE_WIDTH, DEFAULT_FUNCTION_COLOR } from '../constants';
-import { initialNodes, initialEdges } from '../flows/initialFlow';
+import { initialNodes, initialEdges, initialFunctions } from '../flows/initialFlow';
 import useTemporalStore, { type Snapshot } from './useTemporalStore';
 import {
   saveToLocalStorage,
@@ -34,7 +34,7 @@ function getInitialFlow(): { nodes: Node[]; edges: Edge[]; functions?: Record<st
   }
   const fromStorage = loadFromLocalStorage();
   if (fromStorage) return fromStorage;
-  return { nodes: initialNodes, edges: initialEdges };
+  return { nodes: initialNodes, edges: initialEdges, functions: initialFunctions };
 }
 
 const _initial = getInitialFlow();
