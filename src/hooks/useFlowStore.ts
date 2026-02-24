@@ -12,6 +12,7 @@ import {
   addEdge,
 } from '@xyflow/react';
 import type { DataType } from '../types';
+import { GRID_SIZE, NODE_WIDTH } from '../constants';
 import { initialNodes, initialEdges } from '../flows/initialFlow';
 import useTemporalStore, { type Snapshot } from './useTemporalStore';
 import {
@@ -137,6 +138,7 @@ interface FlowState {
       existingIsSource: boolean;
     },
   ) => void;
+  wrapSelectedNodesInComment: () => void;
   copySelectedNodes: () => void;
   pasteNodes: (viewportCenter: { x: number; y: number }) => void;
   loadFlow: (nodes: Node[], edges: Edge[]) => void;
@@ -261,6 +263,44 @@ const useFlowStore = create<FlowState>((set, get) => ({
     set({
       nodes: allNodes,
       edges: addEdge(newEdge, get().edges),
+    });
+  },
+  wrapSelectedNodesInComment: () => {
+    const { nodes } = get();
+    const selected = nodes.filter((n) => n.selected && n.type !== 'comment');
+    if (selected.length === 0) return;
+
+    saveSnapshot(get);
+
+    const PADDING = 40;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const node of selected) {
+      const w = node.measured?.width ?? (node.width as number) ?? NODE_WIDTH;
+      const h = node.measured?.height ?? (node.height as number) ?? 40;
+      minX = Math.min(minX, node.position.x);
+      minY = Math.min(minY, node.position.y);
+      maxX = Math.max(maxX, node.position.x + w);
+      maxY = Math.max(maxY, node.position.y + h);
+    }
+
+    const commentX = Math.floor((minX - PADDING) / GRID_SIZE) * GRID_SIZE;
+    const commentY = Math.floor((minY - PADDING) / GRID_SIZE) * GRID_SIZE;
+    const commentW = Math.ceil((maxX + PADDING - commentX) / GRID_SIZE) * GRID_SIZE;
+    const commentH = Math.ceil((maxY + PADDING - commentY) / GRID_SIZE) * GRID_SIZE;
+
+    const id = `comment-${Date.now()}`;
+    const commentNode: Node = {
+      id,
+      type: 'comment',
+      position: { x: commentX, y: commentY },
+      data: {},
+      style: { width: commentW, height: commentH },
+      selected: false,
+    };
+
+    set({
+      nodes: [commentNode, ...nodes.map((n) => ({ ...n, selected: false }))],
     });
   },
   copySelectedNodes: () => {

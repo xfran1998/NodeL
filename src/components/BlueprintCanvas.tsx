@@ -9,6 +9,7 @@ import {
   useReactFlow,
   type Connection,
   type Edge,
+  type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -16,7 +17,7 @@ import type { DataType } from '../types';
 import { nodeTypes } from './nodes';
 import { edgeTypes } from './edges';
 import ContextMenu from './ContextMenu';
-import { GRID_SIZE } from '../constants';
+import { GRID_SIZE, NODE_WIDTH } from '../constants';
 import useFlowStore, { EXEC_HANDLES } from '../hooks/useFlowStore';
 import useExecutionStore from '../hooks/useExecutionStore';
 import { initialNodes, initialEdges } from '../flows/initialFlow';
@@ -152,7 +153,7 @@ interface CtxMenuState {
 }
 
 export default function BlueprintCanvas() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, onReconnect, deleteEdge, deleteSelectedNodes, addNode, addNodeWithEdge, copySelectedNodes, pasteNodes, undo, redo, onNodeDragStart, onNodeDragStop } =
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, onReconnect, deleteEdge, deleteSelectedNodes, addNode, addNodeWithEdge, wrapSelectedNodesInComment, copySelectedNodes, pasteNodes, undo, redo, onNodeDragStart, onNodeDragStop } =
     useFlowStore();
   const { screenToFlowPosition, getViewport, setCenter } = useReactFlow();
 
@@ -176,6 +177,13 @@ export default function BlueprintCanvas() {
   }, [executingNodeId, followActiveNode, stepDelay, nodes, setCenter, getViewport]);
 
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
+
+  // ── Comment drag tracking ──
+  const commentDragRef = useRef<{
+    commentId: string;
+    commentStartPos: { x: number; y: number };
+    containedNodes: Array<{ id: string; startPos: { x: number; y: number } }>;
+  } | null>(null);
 
   // ── Connection-drop tracking ──
   const pendingConnRef = useRef<PendingConn | null>(null);
@@ -289,6 +297,76 @@ export default function BlueprintCanvas() {
     [deleteEdge],
   );
 
+  // ── Comment-aware drag handlers ──
+
+  const handleNodeDragStart = useCallback(
+    (_event: React.MouseEvent, _node: Node, draggedNodes: Node[]) => {
+      onNodeDragStart();
+
+      const commentNode = draggedNodes.find((n) => n.type === 'comment');
+      if (!commentNode) {
+        commentDragRef.current = null;
+        return;
+      }
+
+      const cw = (commentNode.style?.width as number) ?? commentNode.measured?.width ?? 300;
+      const ch = (commentNode.style?.height as number) ?? commentNode.measured?.height ?? 200;
+      const cx = commentNode.position.x;
+      const cy = commentNode.position.y;
+
+      const draggedIds = new Set(draggedNodes.map((n) => n.id));
+      const allNodes = useFlowStore.getState().nodes;
+      const contained: Array<{ id: string; startPos: { x: number; y: number } }> = [];
+
+      for (const n of allNodes) {
+        if (draggedIds.has(n.id) || n.type === 'comment') continue;
+        const nw = n.measured?.width ?? (n.width as number) ?? NODE_WIDTH;
+        const nh = n.measured?.height ?? (n.height as number) ?? 40;
+        const centerX = n.position.x + nw / 2;
+        const centerY = n.position.y + nh / 2;
+        if (centerX >= cx && centerX <= cx + cw && centerY >= cy && centerY <= cy + ch) {
+          contained.push({ id: n.id, startPos: { ...n.position } });
+        }
+      }
+
+      commentDragRef.current = contained.length > 0
+        ? { commentId: commentNode.id, commentStartPos: { ...commentNode.position }, containedNodes: contained }
+        : null;
+    },
+    [onNodeDragStart],
+  );
+
+  const handleNodeDrag = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      const dragState = commentDragRef.current;
+      if (!dragState || node.id !== dragState.commentId) return;
+
+      const deltaX = node.position.x - dragState.commentStartPos.x;
+      const deltaY = node.position.y - dragState.commentStartPos.y;
+
+      const currentNodes = useFlowStore.getState().nodes;
+      const containedIds = new Set(dragState.containedNodes.map((c) => c.id));
+      const containedMap = new Map(dragState.containedNodes.map((c) => [c.id, c.startPos]));
+
+      const updatedNodes = currentNodes.map((n) => {
+        if (!containedIds.has(n.id)) return n;
+        const startPos = containedMap.get(n.id)!;
+        return { ...n, position: { x: startPos.x + deltaX, y: startPos.y + deltaY } };
+      });
+
+      useFlowStore.setState({ nodes: updatedNodes });
+    },
+    [],
+  );
+
+  const handleNodeDragStop = useCallback(
+    () => {
+      commentDragRef.current = null;
+      onNodeDragStop();
+    },
+    [onNodeDragStop],
+  );
+
   /** Right-click on empty canvas → show context menu (no filter) */
   const handlePaneContextMenu = useCallback(
     (event: MouseEvent | React.MouseEvent) => {
@@ -398,11 +476,15 @@ export default function BlueprintCanvas() {
         e.preventDefault();
         deleteSelectedNodes();
       }
+
+      if (e.key === 'c' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        wrapSelectedNodesInComment();
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [copySelectedNodes, pasteNodes, getViewport, deleteSelectedNodes, undo, redo]);
+  }, [copySelectedNodes, pasteNodes, getViewport, deleteSelectedNodes, undo, redo, wrapSelectedNodesInComment]);
 
   return (
     <div style={{ width: '100%', height: '100%' }}>
@@ -417,8 +499,9 @@ export default function BlueprintCanvas() {
         onConnectStart={handleConnectStart}
         onConnectEnd={handleConnectEnd}
         onEdgeClick={handleEdgeClick}
-        onNodeDragStart={onNodeDragStart}
-        onNodeDragStop={onNodeDragStop}
+        onNodeDragStart={handleNodeDragStart}
+        onNodeDrag={handleNodeDrag}
+        onNodeDragStop={handleNodeDragStop}
         onPaneContextMenu={handlePaneContextMenu}
         onPaneClick={handlePaneClick}
         connectionRadius={40}
