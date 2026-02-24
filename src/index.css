@@ -261,6 +261,11 @@ html, body, #root {
   font-style: italic;
 }
 
+select.pin-inline-field {
+  width: 70px;
+  cursor: pointer;
+}
+
 /* ── Flow toolbar (top-center) ── */
 .flow-toolbar {
   position: absolute;

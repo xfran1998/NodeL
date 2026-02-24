@@ -77,6 +77,12 @@ const SOURCE_PIN_TYPES: Record<string, Record<string, DataType>> = {
 };
 
 function getSourcePinDataType(nodeType: string, handleId: string, node?: Node): DataType {
+  // Dynamic type for SET node — reads user-selected valueType
+  if (nodeType === 'set' && handleId === 'out-value' && node) {
+    const vt = (node.data as Record<string, unknown>).valueType as DataType | undefined;
+    return vt || 'any';
+  }
+
   // Static pin types for known node types
   const staticType = SOURCE_PIN_TYPES[nodeType]?.[handleId];
   if (staticType) return staticType;
@@ -197,6 +203,9 @@ interface FlowState {
   removeFunctionReturn: (fnId: string, retId: string) => void;
   updateFunctionReturn: (fnId: string, retId: string, updates: Partial<FunctionParam>) => void;
   setScope: (scope: string, currentViewport?: { x: number; y: number; zoom: number }) => void;
+
+  /** Update dataType on all outgoing edges from a specific pin */
+  updateOutgoingEdgeTypes: (nodeId: string, handleId: string, dataType: DataType) => void;
 
   /** Get the current scope's nodes/edges (for read access that respects scope swapping) */
   getScopeNodesEdges: (scope: string) => { nodes: Node[]; edges: Edge[] };
@@ -709,6 +718,16 @@ const useFlowStore = create<FlowState>((set, get) => ({
 
     // Clear undo/redo history for the new scope
     useTemporalStore.getState().clear();
+  },
+
+  updateOutgoingEdgeTypes: (nodeId, handleId, dataType) => {
+    set({
+      edges: get().edges.map((e) =>
+        e.source === nodeId && e.sourceHandle === handleId
+          ? { ...e, data: { ...e.data, dataType } }
+          : e,
+      ),
+    });
   },
 
   getScopeNodesEdges: (scope) => {

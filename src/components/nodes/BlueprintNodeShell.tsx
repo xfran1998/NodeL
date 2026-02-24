@@ -134,19 +134,36 @@ export default function BlueprintNodeShell({
               >
                 {/* Left: inline field or label */}
                 {showInline ? (
-                  <input
-                    type="text"
-                    className="pin-inline-field nodrag"
-                    value={inlineValues?.[leftPin.id] ?? ''}
-                    placeholder={leftPin.label}
-                    onChange={(e) =>
-                      onInlineChange?.(leftPin.id, e.target.value)
-                    }
-                    style={{
-                      borderColor:
-                        TYPE_COLORS[leftPin.dataType || 'any'],
-                    }}
-                  />
+                  leftPin.dataType === 'boolean' ? (
+                    <select
+                      className="pin-inline-field nodrag"
+                      value={inlineValues?.[leftPin.id] ?? 'false'}
+                      onChange={(e) =>
+                        onInlineChange?.(leftPin.id, e.target.value)
+                      }
+                      style={{
+                        borderColor:
+                          TYPE_COLORS[leftPin.dataType],
+                      }}
+                    >
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="pin-inline-field nodrag"
+                      value={inlineValues?.[leftPin.id] ?? ''}
+                      placeholder={leftPin.label}
+                      onChange={(e) =>
+                        onInlineChange?.(leftPin.id, e.target.value)
+                      }
+                      style={{
+                        borderColor:
+                          TYPE_COLORS[leftPin.dataType || 'any'],
+                      }}
+                    />
+                  )
                 ) : (
                   <span
                     className={`pin-label${leftPin?.kind === 'exec' ? ' pin-label--exec' : ''}`}

@@ -22,7 +22,7 @@ import FunctionDropdown from './FunctionDropdown';
 import { GRID_SIZE, NODE_WIDTH } from '../constants';
 import useFlowStore, { EXEC_HANDLES } from '../hooks/useFlowStore';
 import useExecutionStore from '../hooks/useExecutionStore';
-import { initialNodes, initialEdges } from '../flows/initialFlow';
+import { initialNodes, initialEdges, initialFunctions } from '../flows/initialFlow';
 import { demoNodes, demoEdges } from '../flows/demoAllNodes';
 import { exportToFile, importFromFile, encodeFlowToHash } from '../lib/persistence';
 import { PIN_REGISTRY, findCompatiblePin, hasCompatiblePin, getPinsForNode } from '../lib/pinRegistry';
@@ -151,8 +151,8 @@ function FlowToolbar() {
       <div className="flow-toolbar__sep" />
       <FunctionDropdown onNavigate={handleFunctionNavigate} />
       <div className="flow-toolbar__sep" />
-      <button onClick={() => load(initialNodes, initialEdges)}>
-        Promedio de Notas
+      <button onClick={() => load(initialNodes, initialEdges, initialFunctions)}>
+        Demo
       </button>
       <button onClick={() => load(demoNodes, demoEdges)}>
         Demo: Todos los Nodos

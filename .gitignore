@@ -24,6 +24,3 @@ npm-debug.log*
 
 # Build cache
 tsconfig.tsbuildinfo
-
-# User flow data
-canvascoder-flow.json
