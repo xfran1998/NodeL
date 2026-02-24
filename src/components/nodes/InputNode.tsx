@@ -18,7 +18,10 @@ export default function InputNode({ id, data, selected }: NodeProps<Node<Bluepri
         { id: 'exec-in', kind: 'exec' },
         { id: 'prompt', kind: 'data', label: 'prompt', dataType: 'string', inline: true },
       ]}
-      pinsRight={[{ id: 'exec-out', kind: 'exec' }]}
+      pinsRight={[
+        { id: 'exec-out', kind: 'exec' },
+        { id: 'out-value', kind: 'data', label: varName || 'value', dataType: 'number' },
+      ]}
       selected={selected}
       inlineValues={inlineValues}
       onInlineChange={(pinId, value) =>

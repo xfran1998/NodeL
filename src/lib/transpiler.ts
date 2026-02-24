@@ -1,4 +1,5 @@
 import type { Node, Edge } from '@xyflow/react';
+import type { FunctionDef } from '../types';
 
 export interface TranspileResult {
   code: string;
@@ -31,7 +32,17 @@ const COMPARE_OPS: Record<string, string> = {
   notEqual: '!==',
 };
 
-export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptions): TranspileResult {
+/**
+ * Transpile a single graph (nodes + edges) into JavaScript lines.
+ * Used for both main graph and function sub-graphs.
+ */
+function transpileGraph(
+  nodes: Node[],
+  edges: Edge[],
+  options: TranspileOptions | undefined,
+  functions: Record<string, FunctionDef>,
+  startType: 'start' | 'functionEntry',
+): { lines: string[]; errors: string[] } {
   const errors: string[] = [];
 
   // ── Phase A: Build O(1) lookup indexes ──
@@ -61,6 +72,10 @@ export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptio
   // Temp var tracking for arrayPop results
   let popCounter = 0;
   const popTempVars = new Map<string, string>();
+
+  // Temp var tracking for callFunction results
+  let callCounter = 0;
+  const callTempVars = new Map<string, Record<string, string>>();
 
   // ── Phase B: Resolve data expressions ──
   function resolveExpr(nodeId: string, handleOut: string, visited: Set<string>): string {
@@ -92,7 +107,6 @@ export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptio
 
     // Concat (string concatenation)
     if (type === 'concat') {
-      // For concat, inline values should be quoted as strings, not raw numbers
       function concatInputExpr(pinId: string): string {
         const incoming = dataEdgesTo.get(nodeId);
         const conn = incoming?.get(pinId);
@@ -142,6 +156,12 @@ export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptio
       return varName;
     }
 
+    // Input node out-value pin — returns the variable name
+    if (type === 'input' && handleOut === 'out-value') {
+      const varName = (data.variable as string) || '_input';
+      return varName;
+    }
+
     // For node i pin — returns the loop variable name
     if (type === 'for' && handleOut === 'i') {
       const varName = (data.variable as string) || 'i';
@@ -154,7 +174,6 @@ export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptio
     if (type === 'arrayPop' && handleOut === 'value') {
       const tempVar = popTempVars.get(nodeId);
       if (tempVar) return tempVar;
-      // Fallback if pop hasn't been walked yet
       const varName = (data.variable as string) || '_arr';
       return `${varName}.pop()`;
     }
@@ -170,6 +189,26 @@ export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptio
       const varName = (data.variable as string) || '_arr';
       const index = inputExpr('index', '0');
       return `${varName}[${index}]`;
+    }
+
+    // ── Function node data expressions ──
+
+    // FunctionEntry: output pins correspond to function params (argument names)
+    if (type === 'functionEntry') {
+      const fnId = (data.functionId as string) || '';
+      const fn = functions[fnId];
+      if (fn) {
+        const param = fn.params.find((p) => p.id === handleOut);
+        if (param) return param.name;
+      }
+      return '0';
+    }
+
+    // CallFunction: output pins correspond to function return values
+    if (type === 'callFunction') {
+      const temps = callTempVars.get(nodeId);
+      if (temps && temps[handleOut]) return temps[handleOut];
+      return '0';
     }
 
     return '0';
@@ -207,14 +246,73 @@ export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptio
     const type = node.type || '';
     const data = node.data as Record<string, unknown>;
 
-    // Inject execution instrumentation for all nodes except start
-    if (options?.instrument && type !== 'start') {
+    // Inject execution instrumentation for all nodes except start/functionEntry
+    if (options?.instrument && type !== 'start' && type !== 'functionEntry') {
       emitLine(`await __onNode("${nodeId}");`, indent);
     }
 
     switch (type) {
-      case 'start': {
+      case 'start':
+      case 'functionEntry': {
         // Just follow exec-out
+        const next = execEdges.get(nodeId)?.get('exec-out');
+        if (next) walkExec(next, indent, visited);
+        break;
+      }
+
+      case 'functionReturn': {
+        const fnId = (data.functionId as string) || '';
+        const fn = functions[fnId];
+        if (fn && fn.returns.length > 0) {
+          if (fn.returns.length === 1) {
+            const ret = fn.returns[0];
+            const expr = getInputExpr(nodeId, ret.id, '0');
+            emitLine(`return ${expr};`, indent);
+          } else {
+            const retParts = fn.returns.map((r) => {
+              const expr = getInputExpr(nodeId, r.id, '0');
+              return `${r.name}: ${expr}`;
+            });
+            emitLine(`return { ${retParts.join(', ')} };`, indent);
+          }
+        } else {
+          emitLine('return;', indent);
+        }
+        break;
+      }
+
+      case 'callFunction': {
+        const fnId = (data.functionId as string) || '';
+        const fn = functions[fnId];
+        if (!fn) {
+          emitLine(`// Error: function not found`, indent);
+          const next = execEdges.get(nodeId)?.get('exec-out');
+          if (next) walkExec(next, indent, visited);
+          break;
+        }
+
+        // Build argument list from params
+        const args = fn.params.map((p) => getInputExpr(nodeId, p.id, '0'));
+        const callExpr = `await __fn_${sanitizeName(fn.name)}(${args.join(', ')})`;
+
+        if (fn.returns.length === 0) {
+          emitLine(`${callExpr};`, indent);
+        } else if (fn.returns.length === 1) {
+          const ret = fn.returns[0];
+          const tempVar = `__call${callCounter++}`;
+          const temps: Record<string, string> = { [ret.id]: tempVar };
+          callTempVars.set(nodeId, temps);
+          emitLine(`let ${tempVar} = ${callExpr};`, indent);
+        } else {
+          const tempVar = `__call${callCounter++}`;
+          const temps: Record<string, string> = {};
+          for (const r of fn.returns) {
+            temps[r.id] = `${tempVar}.${r.name}`;
+          }
+          callTempVars.set(nodeId, temps);
+          emitLine(`let ${tempVar} = ${callExpr};`, indent);
+        }
+
         const next = execEdges.get(nodeId)?.get('exec-out');
         if (next) walkExec(next, indent, visited);
         break;
@@ -222,15 +320,12 @@ export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptio
 
       case 'input': {
         const varName = (data.variable as string) || '_input';
-        // Resolve prompt from data pin (connected or inline)
         const incoming = dataEdgesTo.get(nodeId);
         const promptConn = incoming?.get('prompt');
         let promptExpr: string;
         if (promptConn) {
-          // Connected to another node — use expression directly
           promptExpr = resolveExpr(promptConn.sourceId, promptConn.sourceHandle, new Set());
         } else {
-          // Inline value or empty
           const inl = (data.inlineValues as Record<string, string> | undefined);
           const raw = inl?.['prompt'] ?? '';
           const escaped = raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -371,13 +466,11 @@ export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptio
 
       case 'break': {
         emitLine('break;', indent);
-        // No exec-out — break terminates the flow
         break;
       }
 
       case 'continue': {
         emitLine('continue;', indent);
-        // No exec-out — continue jumps to loop condition
         break;
       }
 
@@ -390,14 +483,54 @@ export function transpile(nodes: Node[], edges: Edge[], options?: TranspileOptio
     }
   }
 
-  // Find start node
-  const startNode = nodes.find((n) => n.type === 'start');
-  if (!startNode) {
-    errors.push('No start node found');
-    return { code: '// Error: No start node found', errors };
+  // Find entry node
+  const entryNode = nodes.find((n) => n.type === startType);
+  if (!entryNode) {
+    errors.push(`No ${startType} node found`);
+    return { lines: [`// Error: No ${startType} node found`], errors };
   }
 
-  walkExec(startNode.id, 0, new Set());
+  walkExec(entryNode.id, 0, new Set());
 
-  return { code: lines.join('\n'), errors };
+  return { lines, errors };
+}
+
+/** Sanitize a function name to a valid JS identifier */
+function sanitizeName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_$]/g, '_').replace(/^(\d)/, '_$1') || '_fn';
+}
+
+export function transpile(
+  nodes: Node[],
+  edges: Edge[],
+  options?: TranspileOptions,
+  functions?: Record<string, FunctionDef>,
+): TranspileResult {
+  const allErrors: string[] = [];
+  const allLines: string[] = [];
+  const fns = functions || {};
+
+  // ── Generate function definitions first ──
+  for (const fn of Object.values(fns)) {
+    const paramNames = fn.params.map((p) => p.name);
+    const fnName = `__fn_${sanitizeName(fn.name)}`;
+
+    allLines.push(`async function ${fnName}(${paramNames.join(', ')}) {`);
+
+    const { lines, errors } = transpileGraph(fn.nodes, fn.edges, options, fns, 'functionEntry');
+    for (const line of lines) {
+      allLines.push('  ' + line);
+    }
+    allErrors.push(...errors);
+
+    allLines.push('}');
+    allLines.push('');
+  }
+
+  // ── Generate main code ──
+  const { lines: mainLines, errors: mainErrors } = transpileGraph(nodes, edges, options, fns, 'start');
+  allLines.push(...mainLines);
+  allErrors.push(...mainErrors);
+
+  return { code: allLines.join('\n'), errors: allErrors };
 }

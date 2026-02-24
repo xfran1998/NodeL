@@ -18,3 +18,6 @@ export const TYPE_COLORS: Record<string, string> = {
   array: '#06b6d4',
   any: '#a3a3a3',
 };
+
+// Default color for user-defined functions
+export const DEFAULT_FUNCTION_COLOR = '#8b5cf6';

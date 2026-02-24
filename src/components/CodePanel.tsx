@@ -32,9 +32,33 @@ function highlightCode(code: string): string {
   return html;
 }
 
+/** Get the full state for transpilation (main nodes/edges + all functions synced) */
+function getTranspileState() {
+  const state = useFlowStore.getState();
+  const functions = { ...state.functions };
+
+  // If currently viewing a function, sync its nodes/edges
+  if (state.currentScope !== 'main' && functions[state.currentScope]) {
+    functions[state.currentScope] = {
+      ...functions[state.currentScope],
+      nodes: state.nodes,
+      edges: state.edges,
+    };
+  }
+
+  const mainNodes = state.currentScope === 'main' ? state.nodes : state.mainNodes;
+  const mainEdges = state.currentScope === 'main' ? state.edges : state.mainEdges;
+
+  return { mainNodes, mainEdges, functions };
+}
+
 export default function CodePanel() {
   const nodes = useFlowStore((s) => s.nodes);
   const edges = useFlowStore((s) => s.edges);
+  const functions = useFlowStore((s) => s.functions);
+  const currentScope = useFlowStore((s) => s.currentScope);
+  const mainNodes = useFlowStore((s) => s.mainNodes);
+  const mainEdges = useFlowStore((s) => s.mainEdges);
   const [isOpen, setIsOpen] = useState(true);
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -46,8 +70,11 @@ export default function CodePanel() {
   const consoleRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<HTMLInputElement>(null);
 
-  // Clean code for display
-  const { code, errors } = useMemo(() => transpile(nodes, edges), [nodes, edges]);
+  // Compute full state for transpilation
+  const { code, errors } = useMemo(() => {
+    const ts = getTranspileState();
+    return transpile(ts.mainNodes, ts.mainEdges, undefined, ts.functions);
+  }, [nodes, edges, functions, currentScope, mainNodes, mainEdges]);
 
   // Auto-scroll console
   useEffect(() => {
@@ -74,7 +101,8 @@ export default function CodePanel() {
 
     const stepDelay = useExecutionStore.getState().stepDelay;
     // Only instrument when not in instant mode — instant skips all animation
-    const { code: instrumentedCode } = transpile(nodes, edges, { instrument: stepDelay !== 0 });
+    const ts = getTranspileState();
+    const { code: instrumentedCode } = transpile(ts.mainNodes, ts.mainEdges, { instrument: stepDelay !== 0 }, ts.functions);
 
     await executeCode(instrumentedCode, {
       onLog: (text) => setConsoleEntries((prev) => [...prev, { type: 'log', text }]),

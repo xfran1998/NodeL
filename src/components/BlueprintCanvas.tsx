@@ -13,17 +13,19 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import type { DataType } from '../types';
+import type { DataType, FunctionDef } from '../types';
 import { nodeTypes } from './nodes';
 import { edgeTypes } from './edges';
 import ContextMenu from './ContextMenu';
+import ScopeBreadcrumb from './ScopeBreadcrumb';
+import FunctionDropdown from './FunctionDropdown';
 import { GRID_SIZE, NODE_WIDTH } from '../constants';
 import useFlowStore, { EXEC_HANDLES } from '../hooks/useFlowStore';
 import useExecutionStore from '../hooks/useExecutionStore';
 import { initialNodes, initialEdges } from '../flows/initialFlow';
 import { demoNodes, demoEdges } from '../flows/demoAllNodes';
 import { exportToFile, importFromFile, encodeFlowToHash } from '../lib/persistence';
-import { PIN_REGISTRY, findCompatiblePin, hasCompatiblePin } from '../lib/pinRegistry';
+import { PIN_REGISTRY, findCompatiblePin, hasCompatiblePin, getPinsForNode } from '../lib/pinRegistry';
 
 const MINIMAP_COLORS: Record<string, string> = {
   // Flow
@@ -62,6 +64,10 @@ const MINIMAP_COLORS: Record<string, string> = {
   // Loop control
   break: '#ef4444',
   continue: '#f59e0b',
+  // Function
+  functionEntry: '#8b5cf6',
+  functionReturn: '#8b5cf6',
+  callFunction: '#8b5cf6',
   // Layout
   comment: '#6b7280',
 };
@@ -69,16 +75,21 @@ const MINIMAP_COLORS: Record<string, string> = {
 function FlowToolbar() {
   const nodes = useFlowStore((s) => s.nodes);
   const edges = useFlowStore((s) => s.edges);
+  const functions = useFlowStore((s) => s.functions);
   const loadFlow = useFlowStore((s) => s.loadFlow);
-  const { fitView } = useReactFlow();
+  const currentScope = useFlowStore((s) => s.currentScope);
+  const setScope = useFlowStore((s) => s.setScope);
+  const { fitView, getViewport } = useReactFlow();
   const [shareLabel, setShareLabel] = useState('Share');
 
   const load = useCallback(
-    (n: typeof initialNodes, e: typeof initialEdges) => {
-      loadFlow(n, e);
+    (n: typeof initialNodes, e: typeof initialEdges, fns?: Record<string, FunctionDef>) => {
+      // Switch to main scope first if needed
+      if (currentScope !== 'main') setScope('main', getViewport());
+      loadFlow(n, e, fns || {});
       setTimeout(() => fitView({ padding: 0.3 }), 50);
     },
-    [loadFlow, fitView],
+    [loadFlow, fitView, currentScope, setScope, getViewport],
   );
 
   const handleNew = useCallback(() => {
@@ -87,29 +98,49 @@ function FlowToolbar() {
         { id: 'start', type: 'start', position: { x: 0, y: 0 }, data: {} },
       ],
       [],
+      {},
     );
   }, [load]);
 
   const handleExport = useCallback(() => {
-    exportToFile(nodes, edges);
-  }, [nodes, edges]);
+    // Get full state (main + functions)
+    const state = useFlowStore.getState();
+    const allFunctions = { ...state.functions };
+    if (state.currentScope !== 'main' && allFunctions[state.currentScope]) {
+      allFunctions[state.currentScope] = { ...allFunctions[state.currentScope], nodes: state.nodes, edges: state.edges };
+    }
+    const mainNodes = state.currentScope === 'main' ? state.nodes : state.mainNodes;
+    const mainEdges = state.currentScope === 'main' ? state.edges : state.mainEdges;
+    exportToFile(mainNodes, mainEdges, allFunctions);
+  }, []);
 
   const handleImport = useCallback(async () => {
     try {
       const data = await importFromFile();
-      load(data.nodes, data.edges);
+      load(data.nodes, data.edges, data.functions || {});
     } catch {
       // User cancelled or invalid file
     }
   }, [load]);
 
   const handleShare = useCallback(() => {
-    const hash = encodeFlowToHash(nodes, edges);
+    const state = useFlowStore.getState();
+    const allFunctions = { ...state.functions };
+    if (state.currentScope !== 'main' && allFunctions[state.currentScope]) {
+      allFunctions[state.currentScope] = { ...allFunctions[state.currentScope], nodes: state.nodes, edges: state.edges };
+    }
+    const mainNodes = state.currentScope === 'main' ? state.nodes : state.mainNodes;
+    const mainEdges = state.currentScope === 'main' ? state.edges : state.mainEdges;
+    const hash = encodeFlowToHash(mainNodes, mainEdges, allFunctions);
     const url = `${window.location.origin}${window.location.pathname}#${hash}`;
     navigator.clipboard.writeText(url);
     setShareLabel('Copied!');
     setTimeout(() => setShareLabel('Share'), 2000);
-  }, [nodes, edges]);
+  }, []);
+
+  const handleFunctionNavigate = useCallback(() => {
+    // Viewport is now handled inside FunctionDropdown/ScopeBreadcrumb
+  }, []);
 
   return (
     <div className="flow-toolbar">
@@ -117,6 +148,8 @@ function FlowToolbar() {
       <button onClick={handleExport}>Export</button>
       <button onClick={handleImport}>Import</button>
       <button onClick={handleShare}>{shareLabel}</button>
+      <div className="flow-toolbar__sep" />
+      <FunctionDropdown onNavigate={handleFunctionNavigate} />
       <div className="flow-toolbar__sep" />
       <button onClick={() => load(initialNodes, initialEdges)}>
         Promedio de Notas
@@ -155,7 +188,10 @@ interface CtxMenuState {
 export default function BlueprintCanvas() {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect, onReconnect, deleteEdge, deleteSelectedNodes, addNode, addNodeWithEdge, wrapSelectedNodesInComment, copySelectedNodes, pasteNodes, undo, redo, onNodeDragStart, onNodeDragStop } =
     useFlowStore();
-  const { screenToFlowPosition, getViewport, setCenter } = useReactFlow();
+  const functions = useFlowStore((s) => s.functions);
+  const currentScope = useFlowStore((s) => s.currentScope);
+  const setScope = useFlowStore((s) => s.setScope);
+  const { screenToFlowPosition, getViewport, setViewport, setCenter, fitView } = useReactFlow();
 
   // ── Follow active node during execution ──
   const executingNodeId = useExecutionStore((s) => s.executingNodeId);
@@ -212,7 +248,11 @@ export default function BlueprintCanvas() {
 
       let dataType: DataType | undefined;
       if (pinKind === 'data') {
-        const nodePins = PIN_REGISTRY[node.type || ''];
+        // Support dynamic pins for function nodes
+        const nodeType = node.type || '';
+        const fnId = (node.data as Record<string, unknown>)?.functionId as string | undefined;
+        const fnDef = fnId ? useFlowStore.getState().functions[fnId] : undefined;
+        const nodePins = getPinsForNode(nodeType, fnDef) || PIN_REGISTRY[nodeType];
         if (nodePins) {
           const side = params.handleType === 'source' ? nodePins.right : nodePins.left;
           const pin = side.find((p) => p.id === params.handleId);
@@ -272,8 +312,8 @@ export default function BlueprintCanvas() {
   const ctxFilter = useMemo(() => {
     if (!ctxMenu?.pending) return undefined;
     const { handleType, pinKind, dataType } = ctxMenu.pending;
-    return (nodeType: string) =>
-      hasCompatiblePin(nodeType, handleType, pinKind, dataType);
+    return (nodeType: string, fnDef?: FunctionDef) =>
+      hasCompatiblePin(nodeType, handleType, pinKind, dataType, fnDef);
   }, [ctxMenu]);
 
   /** Alt+Click on a wire to disconnect it (like UE Blueprints) */
@@ -384,7 +424,7 @@ export default function BlueprintCanvas() {
   );
 
   const handleCtxSelect = useCallback(
-    (type: string) => {
+    (type: string, extraData?: Record<string, unknown>) => {
       if (!ctxMenu) return;
 
       const snappedX = Math.round(ctxMenu.flowX / GRID_SIZE) * GRID_SIZE;
@@ -393,11 +433,18 @@ export default function BlueprintCanvas() {
       if (ctxMenu.pending) {
         // Auto-connect mode: create node + wire in one shot
         const { pending } = ctxMenu;
+
+        // For callFunction nodes, get the function definition for pin lookup
+        const fnDef = type === 'callFunction' && extraData?.functionId
+          ? useFlowStore.getState().functions[extraData.functionId as string]
+          : undefined;
+
         const newNodeHandle = findCompatiblePin(
           type,
           pending.handleType,
           pending.pinKind,
           pending.dataType,
+          fnDef,
         );
 
         if (newNodeHandle) {
@@ -406,12 +453,12 @@ export default function BlueprintCanvas() {
             existingHandle: pending.handleId,
             newNodeHandle,
             existingIsSource: pending.handleType === 'source',
-          });
+          }, extraData);
         } else {
-          addNode(type, { x: snappedX, y: snappedY });
+          addNode(type, { x: snappedX, y: snappedY }, extraData);
         }
       } else {
-        addNode(type, { x: snappedX, y: snappedY });
+        addNode(type, { x: snappedX, y: snappedY }, extraData);
       }
 
       pendingConnRef.current = null;
@@ -432,6 +479,26 @@ export default function BlueprintCanvas() {
       setCtxMenu(null);
     }
   }, [ctxMenu]);
+
+  /** Double-click on a callFunction node → navigate into the function */
+  const handleNodeDoubleClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      if (node.type === 'callFunction') {
+        const fnId = (node.data as Record<string, unknown>).functionId as string;
+        if (fnId && functions[fnId]) {
+          const vp = getViewport();
+          setScope(fnId, vp);
+          const saved = useFlowStore.getState().viewports[fnId];
+          if (saved) {
+            setTimeout(() => setViewport(saved, { duration: 200 }), 30);
+          } else {
+            setTimeout(() => fitView({ padding: 0.3, duration: 200 }), 30);
+          }
+        }
+      }
+    },
+    [functions, setScope, fitView, getViewport, setViewport],
+  );
 
   /** Keyboard shortcuts */
   useEffect(() => {
@@ -502,6 +569,7 @@ export default function BlueprintCanvas() {
         onNodeDragStart={handleNodeDragStart}
         onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
+        onNodeDoubleClick={handleNodeDoubleClick}
         onPaneContextMenu={handlePaneContextMenu}
         onPaneClick={handlePaneClick}
         connectionRadius={40}
@@ -534,6 +602,7 @@ export default function BlueprintCanvas() {
           }
         />
         <FlowToolbar />
+        <ScopeBreadcrumb />
       </ReactFlow>
       {ctxMenu && (
         <ContextMenu
@@ -542,6 +611,8 @@ export default function BlueprintCanvas() {
           onSelect={handleCtxSelect}
           onClose={handleCtxClose}
           filter={ctxFilter}
+          functions={functions}
+          currentScope={currentScope}
         />
       )}
     </div>

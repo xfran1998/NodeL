@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import type { FunctionDef } from '../types';
 
 interface NodeEntry {
   type: string;
   label: string;
   icon: string;
   color: string;
+  /** Extra data to pass when creating this node (e.g. functionId for callFunction) */
+  extraData?: Record<string, unknown>;
 }
 
 interface Category {
@@ -88,26 +91,75 @@ const NODE_CATALOG: Category[] = [
 interface ContextMenuProps {
   x: number;
   y: number;
-  onSelect: (type: string) => void;
+  onSelect: (type: string, extraData?: Record<string, unknown>) => void;
   onClose: () => void;
   /** When provided, only show node types for which this returns true */
-  filter?: (type: string) => boolean;
+  filter?: (type: string, fnDef?: FunctionDef) => boolean;
+  /** User-defined functions to show in the Functions category */
+  functions?: Record<string, FunctionDef>;
+  /** Current scope - when inside a function, show Return node */
+  currentScope?: string;
 }
 
-export default function ContextMenu({ x, y, onSelect, onClose, filter }: ContextMenuProps) {
+export default function ContextMenu({ x, y, onSelect, onClose, filter, functions, currentScope }: ContextMenuProps) {
   const [search, setSearch] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Build full catalog with dynamic entries
+  const fullCatalog = useMemo(() => {
+    const catalog = [...NODE_CATALOG];
+
+    // If inside a function scope, add "Return" to the Flow category
+    if (currentScope && currentScope !== 'main' && functions?.[currentScope]) {
+      const fn = functions[currentScope];
+      // Insert Return into a new category at the top
+      catalog.splice(1, 0, {
+        name: 'Return',
+        entries: [
+          {
+            type: 'functionReturn',
+            label: 'Return',
+            icon: '↩',
+            color: fn.color,
+            extraData: { functionId: currentScope },
+          },
+        ],
+      });
+    }
+
+    // Add Functions category at the end (if there are functions)
+    if (functions && Object.keys(functions).length > 0) {
+      const fnEntries: NodeEntry[] = Object.values(functions).map((fn) => ({
+        type: 'callFunction',
+        label: fn.name,
+        icon: 'f(x)',
+        color: fn.color,
+        extraData: { functionId: fn.id },
+      }));
+      catalog.push({
+        name: 'Functions',
+        entries: fnEntries,
+      });
+    }
+
+    return catalog;
+  }, [functions, currentScope]);
+
   // Flat filtered list for keyboard navigation
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     const results: { entry: NodeEntry; category: string }[] = [];
-    for (const cat of NODE_CATALOG) {
+    for (const cat of fullCatalog) {
       for (const entry of cat.entries) {
-        // Apply external compatibility filter first
-        if (filter && !filter(entry.type)) continue;
+        // Apply external compatibility filter
+        if (filter) {
+          const fnDef = entry.type === 'callFunction' && entry.extraData?.functionId
+            ? functions?.[(entry.extraData.functionId as string)]
+            : undefined;
+          if (!filter(entry.type, fnDef)) continue;
+        }
         if (
           !q ||
           entry.label.toLowerCase().includes(q) ||
@@ -119,7 +171,7 @@ export default function ContextMenu({ x, y, onSelect, onClose, filter }: Context
       }
     }
     return results;
-  }, [search, filter]);
+  }, [search, filter, fullCatalog, functions]);
 
   // Group filtered results by category for rendering
   const groupedFiltered = useMemo(() => {
@@ -168,7 +220,8 @@ export default function ContextMenu({ x, y, onSelect, onClose, filter }: Context
       setActiveIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter' && filtered.length > 0) {
       e.preventDefault();
-      onSelect(filtered[activeIndex].entry.type);
+      const entry = filtered[activeIndex].entry;
+      onSelect(entry.type, entry.extraData);
     }
   };
 
@@ -210,15 +263,19 @@ export default function ContextMenu({ x, y, onSelect, onClose, filter }: Context
         {groupedFiltered.map((group) => (
           <div key={group.name}>
             <div className="ctx-category">{group.name}</div>
-            {group.entries.map((entry) => {
+            {group.entries.map((entry, entryIdx) => {
               flatIndex++;
               const idx = flatIndex;
+              // Use a unique key for function entries (since multiple can have type=callFunction)
+              const key = entry.extraData?.functionId
+                ? `${entry.type}-${entry.extraData.functionId}`
+                : `${entry.type}-${entryIdx}`;
               return (
                 <button
-                  key={entry.type}
+                  key={key}
                   className={`ctx-item ${idx === activeIndex ? 'ctx-item--active' : ''}`}
                   onMouseEnter={() => setActiveIndex(idx)}
-                  onClick={() => onSelect(entry.type)}
+                  onClick={() => onSelect(entry.type, entry.extraData)}
                 >
                   <span className="ctx-item-icon" style={{ color: entry.color }}>
                     {entry.icon}

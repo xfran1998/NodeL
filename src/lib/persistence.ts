@@ -1,17 +1,23 @@
 import type { Node, Edge } from '@xyflow/react';
+import type { FunctionDef } from '../types';
 
 const STORAGE_KEY = 'canvascoder-flow';
 
 export interface FlowData {
   nodes: Node[];
   edges: Edge[];
+  functions?: Record<string, FunctionDef>;
 }
 
 /* ── localStorage ─────────────────────────────────────── */
 
-export function saveToLocalStorage(nodes: Node[], edges: Edge[]): void {
+export function saveToLocalStorage(nodes: Node[], edges: Edge[], functions?: Record<string, FunctionDef>): void {
   try {
-    const data: FlowData = { nodes: stripNodes(nodes), edges: stripEdges(edges) };
+    const data: FlowData = {
+      nodes: stripNodes(nodes),
+      edges: stripEdges(edges),
+      ...(functions && Object.keys(functions).length > 0 ? { functions: stripFunctions(functions) } : {}),
+    };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
     // localStorage full or unavailable
@@ -32,8 +38,12 @@ export function loadFromLocalStorage(): FlowData | null {
 
 /* ── JSON file export / import ────────────────────────── */
 
-export function exportToFile(nodes: Node[], edges: Edge[]): void {
-  const data: FlowData = { nodes: stripNodes(nodes), edges: stripEdges(edges) };
+export function exportToFile(nodes: Node[], edges: Edge[], functions?: Record<string, FunctionDef>): void {
+  const data: FlowData = {
+    nodes: stripNodes(nodes),
+    edges: stripEdges(edges),
+    ...(functions && Object.keys(functions).length > 0 ? { functions: stripFunctions(functions) } : {}),
+  };
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -72,8 +82,12 @@ export function importFromFile(): Promise<FlowData> {
 
 /* ── URL hash sharing ─────────────────────────────────── */
 
-export function encodeFlowToHash(nodes: Node[], edges: Edge[]): string {
-  const data: FlowData = { nodes: stripNodes(nodes), edges: stripEdges(edges) };
+export function encodeFlowToHash(nodes: Node[], edges: Edge[], functions?: Record<string, FunctionDef>): string {
+  const data: FlowData = {
+    nodes: stripNodes(nodes),
+    edges: stripEdges(edges),
+    ...(functions && Object.keys(functions).length > 0 ? { functions: stripFunctions(functions) } : {}),
+  };
   const json = JSON.stringify(data);
   // btoa-safe unicode encoding
   return btoa(unescape(encodeURIComponent(json)));
@@ -99,4 +113,17 @@ function stripNodes(nodes: Node[]): Node[] {
 
 function stripEdges(edges: Edge[]): Edge[] {
   return edges.map(({ selected: _, ...rest }) => rest);
+}
+
+/** Strip transient properties from function sub-graphs */
+function stripFunctions(functions: Record<string, FunctionDef>): Record<string, FunctionDef> {
+  const result: Record<string, FunctionDef> = {};
+  for (const [id, fn] of Object.entries(functions)) {
+    result[id] = {
+      ...fn,
+      nodes: stripNodes(fn.nodes),
+      edges: stripEdges(fn.edges),
+    };
+  }
+  return result;
 }

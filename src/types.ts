@@ -18,3 +18,19 @@ export interface BlueprintNodeData {
   pinsRight: PinDef[];
   [key: string]: unknown;
 }
+
+export interface FunctionParam {
+  id: string;
+  name: string;
+  dataType: DataType;
+}
+
+export interface FunctionDef {
+  id: string;
+  name: string;
+  color: string;
+  params: FunctionParam[];
+  returns: FunctionParam[];
+  nodes: import('@xyflow/react').Node[];
+  edges: import('@xyflow/react').Edge[];
+}

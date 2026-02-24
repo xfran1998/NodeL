@@ -1,4 +1,4 @@
-import type { DataType } from '../types';
+import type { DataType, FunctionDef } from '../types';
 
 export interface PinInfo {
   id: string;
@@ -21,7 +21,10 @@ export const PIN_REGISTRY: Record<string, NodePins> = {
       { id: 'exec-in', kind: 'exec' },
       { id: 'prompt', kind: 'data', dataType: 'string' },
     ],
-    right: [{ id: 'exec-out', kind: 'exec' }],
+    right: [
+      { id: 'exec-out', kind: 'exec' },
+      { id: 'out-value', kind: 'data', dataType: 'number' },
+    ],
   },
   output: {
     left: [
@@ -214,6 +217,15 @@ export const PIN_REGISTRY: Record<string, NodePins> = {
     left: [{ id: 'exec-in', kind: 'exec' }],
     right: [],
   },
+  // Function nodes have minimal static pins — dynamic pins resolved at runtime
+  functionEntry: {
+    left: [],
+    right: [{ id: 'exec-out', kind: 'exec' }],
+  },
+  functionReturn: {
+    left: [{ id: 'exec-in', kind: 'exec' }],
+    right: [],
+  },
   comment: {
     left: [],
     right: [],
@@ -225,6 +237,28 @@ function typesCompatible(a: DataType, b: DataType): boolean {
   return a === b || a === 'any' || b === 'any';
 }
 
+/** Build dynamic pins for a callFunction node based on its function definition */
+export function getCallFunctionPins(fn: FunctionDef): NodePins {
+  return {
+    left: [
+      { id: 'exec-in', kind: 'exec' },
+      ...fn.params.map((p) => ({ id: p.id, kind: 'data' as const, dataType: p.dataType })),
+    ],
+    right: [
+      { id: 'exec-out', kind: 'exec' },
+      ...fn.returns.map((r) => ({ id: r.id, kind: 'data' as const, dataType: r.dataType })),
+    ],
+  };
+}
+
+/** Get pins for a node type, supporting dynamic function nodes */
+export function getPinsForNode(nodeType: string, fnDef?: FunctionDef): NodePins | null {
+  if (nodeType === 'callFunction' && fnDef) {
+    return getCallFunctionPins(fnDef);
+  }
+  return PIN_REGISTRY[nodeType] || null;
+}
+
 /**
  * Find the first compatible pin on a target node type for the pending connection.
  *
@@ -232,6 +266,7 @@ function typesCompatible(a: DataType, b: DataType): boolean {
  * @param fromHandleType  - 'source' if we dragged from an output, 'target' if from an input
  * @param fromPinKind     - 'exec' or 'data'
  * @param fromDataType    - DataType of the dragged pin (only relevant for data pins)
+ * @param fnDef           - For callFunction nodes, the function definition
  * @returns The pin ID to auto-connect to, or null if no compatible pin exists
  */
 export function findCompatiblePin(
@@ -239,8 +274,9 @@ export function findCompatiblePin(
   fromHandleType: 'source' | 'target',
   fromPinKind: 'exec' | 'data',
   fromDataType?: DataType,
+  fnDef?: FunctionDef,
 ): string | null {
-  const pins = PIN_REGISTRY[targetNodeType];
+  const pins = getPinsForNode(targetNodeType, fnDef);
   if (!pins) return null;
 
   // If we dragged from a source (output), the new node needs a target (input/left) pin.
@@ -265,6 +301,7 @@ export function hasCompatiblePin(
   fromHandleType: 'source' | 'target',
   fromPinKind: 'exec' | 'data',
   fromDataType?: DataType,
+  fnDef?: FunctionDef,
 ): boolean {
-  return findCompatiblePin(nodeType, fromHandleType, fromPinKind, fromDataType) !== null;
+  return findCompatiblePin(nodeType, fromHandleType, fromPinKind, fromDataType, fnDef) !== null;
 }

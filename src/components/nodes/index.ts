@@ -52,6 +52,11 @@ import {
 import BreakNode from './BreakNode';
 import ContinueNode from './ContinueNode';
 
+// Function nodes
+import FunctionEntryNode from './FunctionEntryNode';
+import FunctionReturnNode from './FunctionReturnNode';
+import CallFunctionNode from './CallFunctionNode';
+
 // Layout nodes
 import CommentNode from './CommentNode';
 
@@ -94,6 +99,10 @@ export const nodeTypes: NodeTypes = {
   // Loop control (2)
   break: BreakNode,
   continue: ContinueNode,
+  // Function (3)
+  functionEntry: FunctionEntryNode,
+  functionReturn: FunctionReturnNode,
+  callFunction: CallFunctionNode,
   // Layout (1)
   comment: CommentNode,
 };

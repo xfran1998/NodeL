@@ -11,8 +11,8 @@ import {
   applyEdgeChanges,
   addEdge,
 } from '@xyflow/react';
-import type { DataType } from '../types';
-import { GRID_SIZE, NODE_WIDTH } from '../constants';
+import type { DataType, FunctionDef, FunctionParam } from '../types';
+import { GRID_SIZE, NODE_WIDTH, DEFAULT_FUNCTION_COLOR } from '../constants';
 import { initialNodes, initialEdges } from '../flows/initialFlow';
 import useTemporalStore, { type Snapshot } from './useTemporalStore';
 import {
@@ -22,7 +22,7 @@ import {
 } from '../lib/persistence';
 
 /** Resolve initial flow: URL hash → localStorage → built-in demo */
-function getInitialFlow(): { nodes: Node[]; edges: Edge[] } {
+function getInitialFlow(): { nodes: Node[]; edges: Edge[]; functions?: Record<string, FunctionDef> } {
   const hash = window.location.hash.slice(1);
   if (hash) {
     const fromHash = decodeFlowFromHash(hash);
@@ -40,7 +40,7 @@ function getInitialFlow(): { nodes: Node[]; edges: Edge[] } {
 const _initial = getInitialFlow();
 
 /** Node types that are singletons and cannot be deleted or duplicated */
-const SINGLETON_TYPES = new Set(['start']);
+const SINGLETON_TYPES = new Set(['start', 'functionEntry']);
 
 /** Handle IDs that carry exec flow (not data) */
 export const EXEC_HANDLES = new Set([
@@ -76,8 +76,33 @@ const SOURCE_PIN_TYPES: Record<string, Record<string, DataType>> = {
   arrayGet: { value: 'any' },
 };
 
-function getSourcePinDataType(nodeType: string, handleId: string): DataType {
-  return SOURCE_PIN_TYPES[nodeType]?.[handleId] || 'any';
+function getSourcePinDataType(nodeType: string, handleId: string, node?: Node): DataType {
+  // Static pin types for known node types
+  const staticType = SOURCE_PIN_TYPES[nodeType]?.[handleId];
+  if (staticType) return staticType;
+
+  // Dynamic pin types for function nodes
+  if (nodeType === 'functionEntry' || nodeType === 'callFunction') {
+    // The handle ID encodes the param/return ID; data type stored in node data
+    const fnId = (node?.data as Record<string, unknown>)?.functionId as string | undefined;
+    if (fnId) {
+      const functions = useFlowStore.getState().functions;
+      const fn = functions[fnId];
+      if (fn) {
+        if (nodeType === 'functionEntry') {
+          // Output pins correspond to function params
+          const param = fn.params.find((p) => p.id === handleId);
+          if (param) return param.dataType;
+        } else {
+          // callFunction: output pins correspond to function returns
+          const ret = fn.returns.find((r) => r.id === handleId);
+          if (ret) return ret.dataType;
+        }
+      }
+    }
+  }
+
+  return 'any';
 }
 
 /** Build a typed edge from a connection */
@@ -87,7 +112,7 @@ function connectionToEdge(connection: Connection, nodes: Node[]): Edge {
   if (!srcIsExec) {
     const srcNode = nodes.find((n) => n.id === connection.source);
     if (srcNode) {
-      dataType = getSourcePinDataType(srcNode.type || '', connection.sourceHandle || '');
+      dataType = getSourcePinDataType(srcNode.type || '', connection.sourceHandle || '', srcNode);
     }
   }
   return {
@@ -114,20 +139,33 @@ let dataDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let dataDebounceSnapshotSaved = false;
 const DATA_DEBOUNCE_MS = 300;
 
+/** Counter for auto-naming functions */
+let _fnCounter = 1;
+
 interface FlowState {
   nodes: Node[];
   edges: Edge[];
   clipboard: Clipboard | null;
   _dragSnapshot: Snapshot | null;
+
+  // ── Function system ──
+  functions: Record<string, FunctionDef>;
+  currentScope: string; // 'main' or a function ID
+  mainNodes: Node[];
+  mainEdges: Edge[];
+  viewports: Record<string, { x: number; y: number; zoom: number }>;
+
+  // ── ReactFlow callbacks ──
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
   onReconnect: OnReconnect;
+
+  // ── Actions ──
   deleteEdge: (edgeId: string) => void;
   deleteSelectedNodes: () => void;
   updateNodeData: (nodeId: string, data: Record<string, unknown>) => void;
-  addNode: (type: string, position: { x: number; y: number }) => void;
-  /** Create a node and auto-connect it to an existing pin */
+  addNode: (type: string, position: { x: number; y: number }, extraData?: Record<string, unknown>) => void;
   addNodeWithEdge: (
     type: string,
     position: { x: number; y: number },
@@ -137,15 +175,31 @@ interface FlowState {
       newNodeHandle: string;
       existingIsSource: boolean;
     },
+    extraData?: Record<string, unknown>,
   ) => void;
   wrapSelectedNodesInComment: () => void;
   copySelectedNodes: () => void;
   pasteNodes: (viewportCenter: { x: number; y: number }) => void;
-  loadFlow: (nodes: Node[], edges: Edge[]) => void;
+  loadFlow: (nodes: Node[], edges: Edge[], functions?: Record<string, FunctionDef>) => void;
   undo: () => void;
   redo: () => void;
   onNodeDragStart: () => void;
   onNodeDragStop: () => void;
+
+  // ── Function CRUD ──
+  createFunction: () => string;
+  deleteFunction: (fnId: string) => void;
+  updateFunction: (fnId: string, updates: Partial<Pick<FunctionDef, 'name' | 'color'>>) => void;
+  addFunctionParam: (fnId: string) => void;
+  removeFunctionParam: (fnId: string, paramId: string) => void;
+  updateFunctionParam: (fnId: string, paramId: string, updates: Partial<FunctionParam>) => void;
+  addFunctionReturn: (fnId: string) => void;
+  removeFunctionReturn: (fnId: string, retId: string) => void;
+  updateFunctionReturn: (fnId: string, retId: string, updates: Partial<FunctionParam>) => void;
+  setScope: (scope: string, currentViewport?: { x: number; y: number; zoom: number }) => void;
+
+  /** Get the current scope's nodes/edges (for read access that respects scope swapping) */
+  getScopeNodesEdges: (scope: string) => { nodes: Node[]; edges: Edge[] };
 }
 
 const useFlowStore = create<FlowState>((set, get) => ({
@@ -153,8 +207,16 @@ const useFlowStore = create<FlowState>((set, get) => ({
   edges: _initial.edges,
   clipboard: null,
   _dragSnapshot: null,
+
+  // ── Function system ──
+  functions: _initial.functions || {},
+  currentScope: 'main',
+  mainNodes: _initial.nodes,
+  mainEdges: _initial.edges,
+  viewports: {},
+
   onNodesChange: (changes) => {
-    // Prevent removal of singleton nodes (start) via ReactFlow internals
+    // Prevent removal of singleton nodes (start, functionEntry) via ReactFlow internals
     const safeChanges = changes.filter((c) => {
       if (c.type === 'remove') {
         const node = get().nodes.find((n) => n.id === c.id);
@@ -230,7 +292,7 @@ const useFlowStore = create<FlowState>((set, get) => ({
       ),
     });
   },
-  addNode: (type, position) => {
+  addNode: (type, position, extraData) => {
     // Prevent adding duplicate singleton nodes
     if (SINGLETON_TYPES.has(type) && get().nodes.some((n) => n.type === type)) return;
     saveSnapshot(get);
@@ -239,16 +301,16 @@ const useFlowStore = create<FlowState>((set, get) => ({
       id,
       type,
       position,
-      data: {},
+      data: extraData || {},
       ...(type === 'comment' ? { style: { width: 300, height: 200 } } : {}),
     };
     set({ nodes: [...get().nodes, newNode] });
   },
-  addNodeWithEdge: (type, position, conn) => {
+  addNodeWithEdge: (type, position, conn, extraData) => {
     if (SINGLETON_TYPES.has(type) && get().nodes.some((n) => n.type === type)) return;
     saveSnapshot(get);
     const id = `${type}-${Date.now()}`;
-    const newNode: Node = { id, type, position, data: {} };
+    const newNode: Node = { id, type, position, data: extraData || {} };
     const allNodes = [...get().nodes, newNode];
 
     // Build connection: existing node ↔ new node
@@ -375,9 +437,16 @@ const useFlowStore = create<FlowState>((set, get) => ({
       edges: [...edges, ...newEdges],
     });
   },
-  loadFlow: (nodes, edges) => {
+  loadFlow: (nodes, edges, functions) => {
     saveSnapshot(get);
-    set({ nodes, edges });
+    set({
+      nodes,
+      edges,
+      mainNodes: nodes,
+      mainEdges: edges,
+      currentScope: 'main',
+      ...(functions !== undefined ? { functions } : {}),
+    });
   },
   undo: () => {
     const { nodes, edges } = get();
@@ -400,14 +469,285 @@ const useFlowStore = create<FlowState>((set, get) => ({
       set({ _dragSnapshot: null });
     }
   },
+
+  // ── Function CRUD ──
+
+  createFunction: () => {
+    const fnId = `fn-${Date.now()}`;
+    const name = `Funcion ${_fnCounter++}`;
+    const entryNode: Node = {
+      id: `functionEntry-${Date.now()}`,
+      type: 'functionEntry',
+      position: { x: 0, y: 0 },
+      data: { functionId: fnId },
+    };
+    const fn: FunctionDef = {
+      id: fnId,
+      name,
+      color: DEFAULT_FUNCTION_COLOR,
+      params: [],
+      returns: [],
+      nodes: [entryNode],
+      edges: [],
+    };
+    set({ functions: { ...get().functions, [fnId]: fn } });
+    return fnId;
+  },
+
+  deleteFunction: (fnId) => {
+    const { functions, nodes, edges, currentScope } = get();
+    if (!functions[fnId]) return;
+
+    // If we're inside the function being deleted, switch back to main first
+    if (currentScope === fnId) {
+      get().setScope('main');
+    }
+
+    // Remove callFunction nodes that reference this function (in current scope)
+    const currentNodes = get().nodes;
+    const currentEdges = get().edges;
+    const orphanIds = new Set(
+      currentNodes
+        .filter((n) => n.type === 'callFunction' && (n.data as Record<string, unknown>).functionId === fnId)
+        .map((n) => n.id),
+    );
+
+    const newFunctions = { ...get().functions };
+    delete newFunctions[fnId];
+
+    // Also clean callFunction nodes from main if we're not already in main
+    const mainNodes = get().currentScope === 'main' ? currentNodes : get().mainNodes;
+    const mainEdges = get().currentScope === 'main' ? currentEdges : get().mainEdges;
+
+    const cleanedMainNodes = mainNodes.filter((n) => !orphanIds.has(n.id) &&
+      !(n.type === 'callFunction' && (n.data as Record<string, unknown>).functionId === fnId));
+    const cleanedMainEdges = mainEdges.filter(
+      (e) => !orphanIds.has(e.source) && !orphanIds.has(e.target) &&
+        cleanedMainNodes.some((n) => n.id === e.source) && cleanedMainNodes.some((n) => n.id === e.target),
+    );
+
+    // Also clean callFunction nodes referencing this function inside other functions
+    const cleanedFunctions = { ...newFunctions };
+    for (const [fid, fdef] of Object.entries(cleanedFunctions)) {
+      const hasOrphans = fdef.nodes.some(
+        (n) => n.type === 'callFunction' && (n.data as Record<string, unknown>).functionId === fnId,
+      );
+      if (hasOrphans) {
+        const cleanNodes = fdef.nodes.filter(
+          (n) => !(n.type === 'callFunction' && (n.data as Record<string, unknown>).functionId === fnId),
+        );
+        const cleanNodeIds = new Set(cleanNodes.map((n) => n.id));
+        const cleanEdges = fdef.edges.filter(
+          (e) => cleanNodeIds.has(e.source) && cleanNodeIds.has(e.target),
+        );
+        cleanedFunctions[fid] = { ...fdef, nodes: cleanNodes, edges: cleanEdges };
+      }
+    }
+
+    if (get().currentScope === 'main') {
+      set({
+        functions: cleanedFunctions,
+        nodes: cleanedMainNodes,
+        edges: cleanedMainEdges,
+        mainNodes: cleanedMainNodes,
+        mainEdges: cleanedMainEdges,
+      });
+    } else {
+      // We're in another function scope - clean current scope's nodes too
+      const curNodes = currentNodes.filter(
+        (n) => !(n.type === 'callFunction' && (n.data as Record<string, unknown>).functionId === fnId),
+      );
+      const curNodeIds = new Set(curNodes.map((n) => n.id));
+      const curEdges = currentEdges.filter(
+        (e) => curNodeIds.has(e.source) && curNodeIds.has(e.target),
+      );
+      set({
+        functions: cleanedFunctions,
+        nodes: curNodes,
+        edges: curEdges,
+        mainNodes: cleanedMainNodes,
+        mainEdges: cleanedMainEdges,
+      });
+    }
+  },
+
+  updateFunction: (fnId, updates) => {
+    const { functions } = get();
+    const fn = functions[fnId];
+    if (!fn) return;
+    set({
+      functions: { ...functions, [fnId]: { ...fn, ...updates } },
+    });
+  },
+
+  addFunctionParam: (fnId) => {
+    const { functions } = get();
+    const fn = functions[fnId];
+    if (!fn) return;
+    const param: FunctionParam = {
+      id: `p-${Date.now()}`,
+      name: `param${fn.params.length + 1}`,
+      dataType: 'number',
+    };
+    set({
+      functions: {
+        ...functions,
+        [fnId]: { ...fn, params: [...fn.params, param] },
+      },
+    });
+  },
+
+  removeFunctionParam: (fnId, paramId) => {
+    const { functions } = get();
+    const fn = functions[fnId];
+    if (!fn) return;
+    set({
+      functions: {
+        ...functions,
+        [fnId]: { ...fn, params: fn.params.filter((p) => p.id !== paramId) },
+      },
+    });
+  },
+
+  updateFunctionParam: (fnId, paramId, updates) => {
+    const { functions } = get();
+    const fn = functions[fnId];
+    if (!fn) return;
+    set({
+      functions: {
+        ...functions,
+        [fnId]: {
+          ...fn,
+          params: fn.params.map((p) => (p.id === paramId ? { ...p, ...updates } : p)),
+        },
+      },
+    });
+  },
+
+  addFunctionReturn: (fnId) => {
+    const { functions } = get();
+    const fn = functions[fnId];
+    if (!fn) return;
+    const ret: FunctionParam = {
+      id: `r-${Date.now()}`,
+      name: `result${fn.returns.length + 1}`,
+      dataType: 'number',
+    };
+    set({
+      functions: {
+        ...functions,
+        [fnId]: { ...fn, returns: [...fn.returns, ret] },
+      },
+    });
+  },
+
+  removeFunctionReturn: (fnId, retId) => {
+    const { functions } = get();
+    const fn = functions[fnId];
+    if (!fn) return;
+    set({
+      functions: {
+        ...functions,
+        [fnId]: { ...fn, returns: fn.returns.filter((r) => r.id !== retId) },
+      },
+    });
+  },
+
+  updateFunctionReturn: (fnId, retId, updates) => {
+    const { functions } = get();
+    const fn = functions[fnId];
+    if (!fn) return;
+    set({
+      functions: {
+        ...functions,
+        [fnId]: {
+          ...fn,
+          returns: fn.returns.map((r) => (r.id === retId ? { ...r, ...updates } : r)),
+        },
+      },
+    });
+  },
+
+  setScope: (scope, currentViewport) => {
+    const { currentScope, nodes, edges, functions, viewports } = get();
+    if (scope === currentScope) return;
+
+    // Save current viewport
+    const updatedViewports = currentViewport
+      ? { ...viewports, [currentScope]: currentViewport }
+      : viewports;
+
+    // Save current scope's nodes/edges
+    if (currentScope === 'main') {
+      set({ mainNodes: nodes, mainEdges: edges });
+    } else if (functions[currentScope]) {
+      set({
+        functions: {
+          ...functions,
+          [currentScope]: { ...functions[currentScope], nodes, edges },
+        },
+      });
+    }
+
+    // Load target scope's nodes/edges
+    const updatedFunctions = get().functions;
+    if (scope === 'main') {
+      set({
+        currentScope: 'main',
+        nodes: get().mainNodes,
+        edges: get().mainEdges,
+        viewports: updatedViewports,
+      });
+    } else if (updatedFunctions[scope]) {
+      set({
+        currentScope: scope,
+        nodes: updatedFunctions[scope].nodes,
+        edges: updatedFunctions[scope].edges,
+        viewports: updatedViewports,
+      });
+    }
+
+    // Clear undo/redo history for the new scope
+    useTemporalStore.getState().clear();
+  },
+
+  getScopeNodesEdges: (scope) => {
+    const { currentScope, nodes, edges, mainNodes, mainEdges, functions } = get();
+    if (scope === currentScope) return { nodes, edges };
+    if (scope === 'main') return { nodes: mainNodes, edges: mainEdges };
+    const fn = functions[scope];
+    if (fn) return { nodes: fn.nodes, edges: fn.edges };
+    return { nodes: [], edges: [] };
+  },
 }));
+
+/** Sync current scope back to storage before auto-save */
+function getFullState(): { nodes: Node[]; edges: Edge[]; functions: Record<string, FunctionDef> } {
+  const state = useFlowStore.getState();
+  const functions = { ...state.functions };
+
+  // If currently viewing a function, sync its nodes/edges from the active canvas
+  if (state.currentScope !== 'main' && functions[state.currentScope]) {
+    functions[state.currentScope] = {
+      ...functions[state.currentScope],
+      nodes: state.nodes,
+      edges: state.edges,
+    };
+  }
+
+  const mainNodes = state.currentScope === 'main' ? state.nodes : state.mainNodes;
+  const mainEdges = state.currentScope === 'main' ? state.edges : state.mainEdges;
+
+  return { nodes: mainNodes, edges: mainEdges, functions };
+}
 
 /** Auto-save to localStorage (debounced 500ms) */
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
-useFlowStore.subscribe((state) => {
+useFlowStore.subscribe(() => {
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
-    saveToLocalStorage(state.nodes, state.edges);
+    const full = getFullState();
+    saveToLocalStorage(full.nodes, full.edges, full.functions);
   }, 500);
 });
 
