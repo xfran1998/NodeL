@@ -155,7 +155,7 @@ function FlowToolbar() {
         Demo
       </button>
       <button onClick={() => load(demoNodes, demoEdges)}>
-        Demo: Todos los Nodos
+        Demo: All Nodes
       </button>
     </div>
   );

@@ -11,18 +11,18 @@ export default function ForNode({ id, data, selected }: NodeProps<Node<Blueprint
   return (
     <BlueprintNodeShell
       nodeId={id}
-      label="Para"
+      label="For"
       headerColor="#14b8a6"
       icon="⟳"
       pinsLeft={[
         { id: 'exec-in', kind: 'exec' },
-        { id: 'desde', kind: 'data', label: 'desde', dataType: 'number', inline: true },
-        { id: 'hasta', kind: 'data', label: 'hasta', dataType: 'number', inline: true },
-        { id: 'paso', kind: 'data', label: 'paso', dataType: 'number', inline: true },
+        { id: 'from', kind: 'data', label: 'from', dataType: 'number', inline: true },
+        { id: 'to', kind: 'data', label: 'to', dataType: 'number', inline: true },
+        { id: 'step', kind: 'data', label: 'step', dataType: 'number', inline: true },
       ]}
       pinsRight={[
-        { id: 'done', kind: 'exec', label: 'Fin' },
-        { id: 'body', kind: 'exec', label: 'Cuerpo' },
+        { id: 'done', kind: 'exec', label: 'Done' },
+        { id: 'body', kind: 'exec', label: 'Body' },
         { id: 'i', kind: 'data', label: 'i', dataType: 'number' },
       ]}
       selected={selected}

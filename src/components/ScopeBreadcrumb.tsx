@@ -56,7 +56,7 @@ export default function ScopeBreadcrumb() {
               className="scope-breadcrumb__item scope-breadcrumb__item--active"
               style={{ borderColor: fn.color }}
               onDoubleClick={() => setEditing(true)}
-              title="Doble-click para renombrar"
+              title="Double-click to rename"
             >
               <span
                 className="scope-breadcrumb__dot"

@@ -223,7 +223,7 @@ export default function CodePanel() {
             <button
               className={`code-panel__btn code-panel__btn--follow${followActiveNode ? ' active' : ''}`}
               onClick={() => useExecutionStore.getState().toggleFollowActiveNode()}
-              title={followActiveNode ? 'Dejar de seguir nodo activo' : 'Seguir nodo activo'}
+              title={followActiveNode ? 'Stop following active node' : 'Follow active node'}
             >
               {followActiveNode ? '⊚' : '◎'}
             </button>

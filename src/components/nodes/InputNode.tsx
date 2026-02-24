@@ -11,7 +11,7 @@ export default function InputNode({ id, data, selected }: NodeProps<Node<Bluepri
   return (
     <BlueprintNodeShell
       nodeId={id}
-      label="Leer"
+      label="Read"
       headerColor="#06b6d4"
       icon="📥"
       pinsLeft={[

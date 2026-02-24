@@ -19,12 +19,12 @@ const NODE_CATALOG: Category[] = [
   {
     name: 'Flow',
     entries: [
-      { type: 'input', label: 'Leer', icon: '\uD83D\uDCE5', color: '#06b6d4' },
-      { type: 'output', label: 'Mostrar', icon: '\uD83D\uDCE4', color: '#3b82f6' },
+      { type: 'input', label: 'Read', icon: '\uD83D\uDCE5', color: '#06b6d4' },
+      { type: 'output', label: 'Print', icon: '\uD83D\uDCE4', color: '#3b82f6' },
       { type: 'set', label: 'Set', icon: '\u2190', color: '#a855f7' },
       { type: 'if', label: 'If', icon: '\u25C7', color: '#f59e0b' },
-      { type: 'while', label: 'Mientras', icon: '\u21BB', color: '#f97316' },
-      { type: 'for', label: 'Para', icon: '\u27F3', color: '#14b8a6' },
+      { type: 'while', label: 'While', icon: '\u21BB', color: '#f97316' },
+      { type: 'for', label: 'For', icon: '\u27F3', color: '#14b8a6' },
     ],
   },
   {

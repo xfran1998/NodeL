@@ -483,7 +483,7 @@ const useFlowStore = create<FlowState>((set, get) => ({
 
   createFunction: () => {
     const fnId = `fn-${Date.now()}`;
-    const name = `Funcion ${_fnCounter++}`;
+    const name = `Function ${_fnCounter++}`;
     const entryNode: Node = {
       id: `functionEntry-${Date.now()}`,
       type: 'functionEntry',

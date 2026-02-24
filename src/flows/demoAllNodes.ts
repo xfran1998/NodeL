@@ -14,18 +14,18 @@ const ROW = 260; // vertical spacing between category rows
 const flowY = 0;
 const flowNodes: Node[] = [
   { id: 'd-start', type: 'start', position: { x: 0 * COL, y: flowY }, data: {} },
-  { id: 'd-input', type: 'input', position: { x: 2 * COL, y: flowY }, data: { variable: 'edad', prompt: 'Ingrese edad:' } },
+  { id: 'd-input', type: 'input', position: { x: 2 * COL, y: flowY }, data: { variable: 'age', prompt: 'Enter age:' } },
   { id: 'd-output', type: 'output', position: { x: 3 * COL, y: flowY }, data: {} },
   { id: 'd-set', type: 'set', position: { x: 4 * COL, y: flowY }, data: { variable: 'total' } },
   { id: 'd-if', type: 'if', position: { x: 5 * COL, y: flowY }, data: {} },
   { id: 'd-while', type: 'while', position: { x: 6 * COL, y: flowY }, data: {} },
-  { id: 'd-for', type: 'for', position: { x: 7 * COL, y: flowY }, data: { variable: 'i', inlineValues: { desde: '0', hasta: '10', paso: '1' } } },
+  { id: 'd-for', type: 'for', position: { x: 7 * COL, y: flowY }, data: { variable: 'i', inlineValues: { from: '0', to: '10', step: '1' } } },
 ];
 
 // ── Row 1: VARIABLE NODE (1) ──
 const varY = ROW;
 const varNodes: Node[] = [
-  { id: 'd-get', type: 'get', position: { x: 0 * COL, y: varY }, data: { variable: 'contador' } },
+  { id: 'd-get', type: 'get', position: { x: 0 * COL, y: varY }, data: { variable: 'counter' } },
 ];
 
 // ── Row 2: MATH NODES (5) ──

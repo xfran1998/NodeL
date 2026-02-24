@@ -6,7 +6,7 @@ export default function WhileNode({ id, selected }: NodeProps<Node<BlueprintNode
   return (
     <BlueprintNodeShell
       nodeId={id}
-      label="Mientras"
+      label="While"
       headerColor="#f97316"
       icon="↻"
       pinsLeft={[
@@ -14,8 +14,8 @@ export default function WhileNode({ id, selected }: NodeProps<Node<BlueprintNode
         { id: 'condition', kind: 'data', label: 'condition', dataType: 'boolean' },
       ]}
       pinsRight={[
-        { id: 'done', kind: 'exec', label: 'Fin' },
-        { id: 'body', kind: 'exec', label: 'Cuerpo' },
+        { id: 'done', kind: 'exec', label: 'Done' },
+        { id: 'body', kind: 'exec', label: 'Body' },
       ]}
       selected={selected}
     />

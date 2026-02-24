@@ -20,7 +20,7 @@
         "inlineValues": {
           "value": "100"
         },
-        "variable": "max_primo",
+        "variable": "max_prime",
         "valueType": "number"
       }
     },
@@ -33,8 +33,8 @@
       },
       "data": {
         "inlineValues": {
-          "desde": "2",
-          "paso": "1"
+          "from": "2",
+          "step": "1"
         }
       }
     },
@@ -47,8 +47,8 @@
       },
       "data": {
         "inlineValues": {
-          "desde": "2",
-          "paso": "1"
+          "from": "2",
+          "step": "1"
         },
         "variable": "j"
       }
@@ -173,7 +173,7 @@
         "y": 160
       },
       "data": {
-        "variable": "primos"
+        "variable": "primes"
       }
     },
     {
@@ -184,7 +184,7 @@
         "y": 0
       },
       "data": {
-        "variable": "primos"
+        "variable": "primes"
       }
     },
     {
@@ -198,7 +198,7 @@
         "inlineValues": {
           "value": "false"
         },
-        "variable": "posible_primo",
+        "variable": "possible_prime",
         "valueType": "number"
       }
     },
@@ -210,7 +210,7 @@
         "y": 280
       },
       "data": {
-        "variable": "posible_primo"
+        "variable": "possible_prime"
       }
     },
     {
@@ -223,7 +223,7 @@
       "data": {
         "functionId": "fn-1771958139364",
         "inlineValues": {
-          "p-1771958140718": "primos"
+          "p-1771958140718": "primes"
         }
       }
     }
@@ -243,8 +243,8 @@
       "source": "set-1771957019083",
       "sourceHandle": "out-value",
       "target": "for-1771957050056",
-      "targetHandle": "hasta",
-      "id": "e-set-1771957019083-out-value-for-1771957050056-hasta",
+      "targetHandle": "to",
+      "id": "e-set-1771957019083-out-value-for-1771957050056-to",
       "data": {
         "dataType": "any"
       }
@@ -265,8 +265,8 @@
       "source": "divide-1771957117609",
       "sourceHandle": "result",
       "target": "for-1771957106494",
-      "targetHandle": "hasta",
-      "id": "e-divide-1771957117609-result-for-1771957106494-hasta",
+      "targetHandle": "to",
+      "id": "e-divide-1771957117609-result-for-1771957106494-to",
       "data": {
         "dataType": "number"
       }
@@ -462,12 +462,12 @@
   "functions": {
     "fn-1771958139364": {
       "id": "fn-1771958139364",
-      "name": "MostrarPrimos",
+      "name": "ShowPrimes",
       "color": "#8b5cf6",
       "params": [
         {
           "id": "p-1771958140718",
-          "name": "primos",
+          "name": "primes",
           "dataType": "array"
         }
       ],
@@ -493,7 +493,7 @@
           },
           "data": {
             "inlineValues": {
-              "value": "primos"
+              "value": "primes"
             }
           }
         },
@@ -505,7 +505,7 @@
             "y": 180
           },
           "data": {
-            "variable": "primos"
+            "variable": "primes"
           }
         },
         {
@@ -517,8 +517,8 @@
           },
           "data": {
             "inlineValues": {
-              "desde": "0",
-              "paso": "1"
+              "from": "0",
+              "step": "1"
             }
           }
         },
@@ -530,7 +530,7 @@
             "y": 220
           },
           "data": {
-            "variable": "primos"
+            "variable": "primes"
           }
         }
       ],
@@ -571,8 +571,8 @@
           "source": "arrayLength-paste-1771958154715-1",
           "sourceHandle": "value",
           "target": "for-paste-1771958154715-2",
-          "targetHandle": "hasta",
-          "id": "e-arrayLength-paste-1771958154715-1-value-for-paste-1771958154715-2-hasta",
+          "targetHandle": "to",
+          "id": "e-arrayLength-paste-1771958154715-1-value-for-paste-1771958154715-2-to",
           "data": {
             "dataType": "number"
           }

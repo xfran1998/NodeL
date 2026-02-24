@@ -392,11 +392,11 @@ function transpileGraph(
 
       case 'for': {
         const varName = (data.variable as string) || 'i';
-        const desde = getInputExpr(nodeId, 'desde', '0');
-        const hasta = getInputExpr(nodeId, 'hasta', '10');
-        const paso = getInputExpr(nodeId, 'paso', '1');
+        const from = getInputExpr(nodeId, 'from', '0');
+        const to = getInputExpr(nodeId, 'to', '10');
+        const step = getInputExpr(nodeId, 'step', '1');
         declaredVars.add(varName);
-        emitLine(`for (let ${varName} = ${desde}; ${varName} < ${hasta}; ${varName} += ${paso}) {`, indent);
+        emitLine(`for (let ${varName} = ${from}; ${varName} < ${to}; ${varName} += ${step}) {`, indent);
         if (options?.instrument) {
           emitLine(`await __onNode("${nodeId}");`, indent + 1);
           emitLine(`await __onVar("${varName}", JSON.stringify(${varName}));`, indent + 1);

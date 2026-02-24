@@ -65,7 +65,7 @@ export default function FunctionDropdown({ onNavigate }: FunctionDropdownProps) 
   };
 
   const handleDelete = (fnId: string, fnName: string) => {
-    if (confirm(`Eliminar la funcion "${fnName}"? Se eliminaran todos los nodos que la llamen.`)) {
+    if (confirm(`Delete function "${fnName}"? All nodes calling it will be removed.`)) {
       deleteFunction(fnId);
     }
   };
@@ -85,7 +85,7 @@ export default function FunctionDropdown({ onNavigate }: FunctionDropdownProps) 
       {open && (
         <div className="fn-dropdown__menu">
           {fnList.length === 0 && (
-            <div className="fn-dropdown__empty">No hay funciones</div>
+            <div className="fn-dropdown__empty">No functions</div>
           )}
           {fnList.map((fn) => (
             <div key={fn.id} className="fn-dropdown__item">
@@ -109,7 +109,7 @@ export default function FunctionDropdown({ onNavigate }: FunctionDropdownProps) 
                 <span
                   className="fn-dropdown__name"
                   onDoubleClick={() => setEditingId(fn.id)}
-                  title="Doble-click para renombrar"
+                  title="Double-click to rename"
                 >
                   {fn.name}
                 </span>
@@ -117,14 +117,14 @@ export default function FunctionDropdown({ onNavigate }: FunctionDropdownProps) 
               <button
                 className="fn-dropdown__btn fn-dropdown__btn--enter"
                 onClick={() => handleEnter(fn.id)}
-                title="Entrar en la funcion"
+                title="Enter function"
               >
                 &#8594;
               </button>
               <button
                 className="fn-dropdown__btn fn-dropdown__btn--delete"
                 onClick={() => handleDelete(fn.id, fn.name)}
-                title="Eliminar funcion"
+                title="Delete function"
               >
                 &times;
               </button>
@@ -134,7 +134,7 @@ export default function FunctionDropdown({ onNavigate }: FunctionDropdownProps) 
             className="fn-dropdown__add"
             onClick={handleCreate}
           >
-            + Nueva Funcion
+            + New Function
           </button>
         </div>
       )}

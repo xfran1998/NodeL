@@ -10,7 +10,7 @@ export default function OutputNode({ id, data, selected }: NodeProps<Node<Bluepr
   return (
     <BlueprintNodeShell
       nodeId={id}
-      label="Mostrar"
+      label="Print"
       headerColor="#3b82f6"
       icon="📤"
       pinsLeft={[

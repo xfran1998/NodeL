@@ -66,9 +66,9 @@ export const PIN_REGISTRY: Record<string, NodePins> = {
   for: {
     left: [
       { id: 'exec-in', kind: 'exec' },
-      { id: 'desde', kind: 'data', dataType: 'number' },
-      { id: 'hasta', kind: 'data', dataType: 'number' },
-      { id: 'paso', kind: 'data', dataType: 'number' },
+      { id: 'from', kind: 'data', dataType: 'number' },
+      { id: 'to', kind: 'data', dataType: 'number' },
+      { id: 'step', kind: 'data', dataType: 'number' },
     ],
     right: [
       { id: 'body', kind: 'exec' },
