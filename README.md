@@ -63,6 +63,9 @@ npm run build
 
 ```
 src/
+
+
+
 ├── components/
 │   ├── BlueprintCanvas.tsx   # Main canvas with ReactFlow
 │   ├── CodePanel.tsx         # Code viewer, executor & console

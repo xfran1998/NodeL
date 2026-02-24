@@ -17,17 +17,17 @@ function highlightCode(code: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  // Comments
-  html = html.replace(/(\/\/.*)/g, '<span class="hl-comment">$1</span>');
   // Strings (double-quoted)
   html = html.replace(/("(?:[^"\\]|\\.)*")/g, '<span class="hl-string">$1</span>');
-  // Keywords
+  // Keywords (only outside of HTML tags)
   html = html.replace(
-    /\b(let|const|var|if|else|while|for|function|return|await|async|new|typeof|instanceof)\b/g,
+    /\b(let|const|var|if|else|while|for|function|return|await|async|new|typeof|instanceof)\b(?=[^"]*(?:"[^"]*"[^"]*)*$)/g,
     '<span class="hl-keyword">$1</span>',
   );
-  // Numbers (standalone or after operators, not inside already-tagged spans)
-  html = html.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="hl-number">$1</span>');
+  // Numbers (standalone, only outside of HTML tags)
+  html = html.replace(/\b(\d+(?:\.\d+)?)\b(?=[^"]*(?:"[^"]*"[^"]*)*$)/g, '<span class="hl-number">$1</span>');
+  // Comments last — so they wrap already-highlighted tokens and override their color
+  html = html.replace(/(\/\/.*)/g, '<span class="hl-comment">$1</span>');
 
   return html;
 }

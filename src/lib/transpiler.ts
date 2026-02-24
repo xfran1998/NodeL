@@ -293,7 +293,7 @@ function transpileGraph(
 
         // Build argument list from params
         const args = fn.params.map((p) => getInputExpr(nodeId, p.id, '0'));
-        const callExpr = `await __fn_${sanitizeName(fn.name)}(${args.join(', ')})`;
+        const callExpr = `await ${sanitizeName(fn.name)}(${args.join(', ')})`;
 
         if (fn.returns.length === 0) {
           emitLine(`${callExpr};`, indent);
@@ -366,18 +366,21 @@ function transpileGraph(
 
       case 'if': {
         const cond = getInputExpr(nodeId, 'condition', 'false');
-        emitLine(`if (${cond}) {`, indent);
         const trueBranch = execEdges.get(nodeId)?.get('true');
-        if (trueBranch) walkExec(trueBranch, indent + 1, new Set(visited));
-        emitLine(`} else {`, indent);
         const falseBranch = execEdges.get(nodeId)?.get('false');
-        if (falseBranch) walkExec(falseBranch, indent + 1, new Set(visited));
+        emitLine(`if (${cond}) {`, indent);
+        if (trueBranch) walkExec(trueBranch, indent + 1, new Set(visited));
+        if (falseBranch) {
+          emitLine(`} else {`, indent);
+          walkExec(falseBranch, indent + 1, new Set(visited));
+        }
         emitLine(`}`, indent);
         break;
       }
 
       case 'while': {
         const cond = getInputExpr(nodeId, 'condition', 'false');
+        if (lines.length > 0) lines.push('');
         emitLine(`while (${cond}) {`, indent);
         if (options?.instrument) {
           emitLine(`await __onNode("${nodeId}");`, indent + 1);
@@ -396,6 +399,7 @@ function transpileGraph(
         const to = getInputExpr(nodeId, 'to', '10');
         const step = getInputExpr(nodeId, 'step', '1');
         declaredVars.add(varName);
+        if (lines.length > 0) lines.push('');
         emitLine(`for (let ${varName} = ${from}; ${varName} < ${to}; ${varName} += ${step}) {`, indent);
         if (options?.instrument) {
           emitLine(`await __onNode("${nodeId}");`, indent + 1);
@@ -513,7 +517,7 @@ export function transpile(
   // ── Generate function definitions first ──
   for (const fn of Object.values(fns)) {
     const paramNames = fn.params.map((p) => p.name);
-    const fnName = `__fn_${sanitizeName(fn.name)}`;
+    const fnName = sanitizeName(fn.name);
 
     allLines.push(`async function ${fnName}(${paramNames.join(', ')}) {`);
 
@@ -528,6 +532,7 @@ export function transpile(
   }
 
   // ── Generate main code ──
+  if (allLines.length > 0) allLines.push('//  ****** Main ******');
   const { lines: mainLines, errors: mainErrors } = transpileGraph(nodes, edges, options, fns, 'start');
   allLines.push(...mainLines);
   allErrors.push(...mainErrors);
