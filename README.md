@@ -1,4 +1,4 @@
-# NodeLL
+# NodeL
 
 A visual, node-based programming environment for the browser — inspired by Unreal Engine Blueprints. Build programs by connecting nodes on a canvas and run them instantly in the browser.
 
